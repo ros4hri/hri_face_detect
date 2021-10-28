@@ -1,0 +1,9 @@
+<launch>
+
+  <arg name="image_topic" default="/usb_cam/image_raw" />
+
+  <node pkg="hri_face_detect" name="detect" type="hri_face_detect" output="screen">
+      <param name="image_topic" value="$(arg image_topic)" type="str"/>
+  </node>
+
+</launch>
