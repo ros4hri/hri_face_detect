@@ -12,6 +12,7 @@ import message_filters
 import rospy
 from cv_bridge import CvBridge
 
+from std_msgs.msg import Empty
 from sensor_msgs.msg import Image, CameraInfo, RegionOfInterest
 from hri_msgs.msg import IdsList, RegionOfInterestStamped
 
@@ -118,6 +119,7 @@ class FaceDetector:
 
 facedetector = FaceDetector()
 faces_pub = rospy.Publisher("/humans/faces/tracked", IdsList, queue_size=1)
+semaphore_pub = rospy.Publisher("/hri_face_detect/ready", Empty , queue_size=1, latch=True)
 
 # holds all the individual face publishers -- only used when pre-allocating face publishers
 face_pubs = []
@@ -182,6 +184,7 @@ def callback(rgb_msg,):
             list_ids.append(str(id))
             pub.publish(RegionOfInterestStamped(rgb_msg.header, bb))
 
+
     faces_pub.publish(IdsList(rgb_msg.header, list_ids))
 
     if DEBUG:
@@ -209,12 +212,13 @@ if __name__ == '__main__':
    #info_sub = message_filters.Subscriber('/camera_info', CameraInfo)
    #ts = message_filters.ApproximateTimeSynchronizer([image_sub, info_sub], 10, 0.2)
    #ts.registerCallback(callback)
-   image_sub = rospy.Subscriber("image_raw", Image, callback)
+   image_sub = rospy.Subscriber("image", Image, callback)
 
    if PREALLOCATE_PUBLISHERS:
         face_pubs = {"%05d" % i : rospy.Publisher("/humans/faces/%05d/roi" % i, RegionOfInterestStamped, queue_size=1) for i in range(1,30)}
 
    rospy.loginfo("Ready. Waiting for images to be published on %s." % image_sub.name)
+   semaphore_pub.publish(Empty())
 
    rospy.spin()
 
