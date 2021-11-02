@@ -10,9 +10,10 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
 )
 
-catkin_python_setup()
-
 catkin_package()
+
+catkin_install_python(PROGRAMS nodes/hri_face_detect/detect
+                      DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
 install(DIRECTORY
   launch
