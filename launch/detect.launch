@@ -1,9 +1,9 @@
 <launch>
 
-  <arg name="image_topic" default="/usb_cam/image_raw" />
+    <arg name="image_topic" default="/camera/color/image_raw" />
 
   <node pkg="hri_face_detect" name="hri_face_detect" type="detect" output="screen">
-      <param name="image_topic" value="$(arg image_topic)" type="str"/>
+      <remap from="image" to="$(arg image_topic)"/>
   </node>
 
 </launch>
