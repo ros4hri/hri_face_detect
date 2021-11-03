@@ -2,8 +2,8 @@
 
     <arg name="image_topic" default="/camera/color/image_raw" />
 
-  <node pkg="hri_face_detect" name="hri_face_detect" type="detect" output="screen">
-      <remap from="image" to="$(arg image_topic)"/>
-  </node>
+    <node pkg="hri_face_detect" name="hri_face_detect" type="detect" output="screen">
+        <remap from="image" to="$(arg image_topic)"/>
+    </node>
 
 </launch>
