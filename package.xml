@@ -12,6 +12,7 @@
 
   <buildtool_depend>catkin</buildtool_depend>
   <exec_depend>rospy</exec_depend>
+  <exec_depend>python-mediapipe</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>hri_msgs</exec_depend>

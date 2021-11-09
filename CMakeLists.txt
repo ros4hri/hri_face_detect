@@ -3,7 +3,8 @@ project(hri_face_detect)
 
 find_package(catkin REQUIRED)
 
-catkin_package()
+catkin_package(
+    CATKIN_DEPENDS hri_msgs)
 
 catkin_install_python(PROGRAMS nodes/hri_face_detect/detect
                       DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
