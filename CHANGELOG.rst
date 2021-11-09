@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.0.1 (2021-11-09)
+------------------
 * Added the dependency on python-mediapipe
 * Publish an Empty msg on /hri_detect_face/ready when ready to start
   This is eg required for automated testing, to ensure the node is fully
