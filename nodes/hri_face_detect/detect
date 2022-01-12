@@ -3,6 +3,7 @@
 import math
 import cv2
 import uuid
+from functools import partial
 
 import mediapipe as mp
 
@@ -15,15 +16,6 @@ from std_msgs.msg import Empty
 from sensor_msgs.msg import Image, CameraInfo, RegionOfInterest
 from hri_msgs.msg import IdsList
 
-# if set to true, face IDs will be generated as a sequence of integers,
-# starting at 00001.
-# Otherwise, face IDs will be a random set of 5 characters in [0-9a-f]
-DETERMINISTIC_ID = True
-
-# if True, ROS publishers for each face are created *before* the faces
-# are detected. This makes it possible for client to subscribe early to
-# these topics, to avoid missing any message.
-PREALLOCATE_PUBLISHERS = DETERMINISTIC_ID
 
 # nb of pixels between the centers of to successive regions of interest to
 # consider they belong to the same person
@@ -87,7 +79,7 @@ class FaceDetector:
 
 
 class RosFaceDetector:
-    def __init__(self, debug=False):
+    def __init__(self, debug=False, preallocate=False):
 
         self.debug = debug
 
@@ -97,10 +89,12 @@ class RosFaceDetector:
         self.faces_pub = rospy.Publisher("/humans/faces/tracked", IdsList, queue_size=1)
 
         self.facedetector = FaceDetector()
-        self.image_sub = rospy.Subscriber("image", Image, self.callback)
+        self.image_sub = rospy.Subscriber(
+            "image", Image, partial(self.callback, preallocate)
+        )
 
         # holds all the individual face publishers -- only used when pre-allocating face publishers
-        if PREALLOCATE_PUBLISHERS:
+        if preallocate:
             self.face_pubs = {
                 "%05d"
                 % i: rospy.Publisher(
@@ -133,10 +127,7 @@ class RosFaceDetector:
                 return id
         return None
 
-    def callback(
-        self,
-        rgb_msg,
-    ):
+    def callback(self, preallocate, rgb_msg):
 
         image = CvBridge().imgmsg_to_cv2(rgb_msg, desired_encoding="rgb8")
         img_height, img_width, _ = image.shape
@@ -161,10 +152,11 @@ class RosFaceDetector:
             if id:
                 # we re-detect a face: if it is a 2nd frame, we create a publisher for it.
                 if not self.detectedFaces[id][0]:
-                    final_id = self.generate_face_id()
+                    want_deterministic_id = preallocate
+                    final_id = self.generate_face_id(want_deterministic_id)
                     rospy.loginfo("New face [face_%s]" % final_id)
 
-                    if PREALLOCATE_PUBLISHERS:
+                    if preallocate:
                         pub = self.face_pubs[final_id]
                     else:
                         pub = rospy.Publisher(
@@ -243,8 +235,8 @@ class RosFaceDetector:
 
         return (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2)
 
-    def generate_face_id(self):
-        if DETERMINISTIC_ID:
+    def generate_face_id(self, deterministic=False):
+        if deterministic:
             id_str = "%05d" % self.last_id
             self.last_id = (self.last_id + 1) % 10000
             return id_str
@@ -259,6 +251,18 @@ class RosFaceDetector:
 if __name__ == "__main__":
     rospy.init_node("hri_face_detect")
 
-    detector = RosFaceDetector(debug=rospy.get_param("~debug", False))
+    debug = rospy.get_param("~debug", False)
+
+    # if set to true, face IDs will be generated as a sequence of integers,
+    # starting at 00001, and ROS publishers for each face are created *before*
+    # the faces are detected. This makes it possible for client to subscribe
+    # early to these topics, to avoid missing any message. This is useful to eg
+    # annotate datasets.
+
+    # if false, face IDs will be a random set of 5 characters in [0-9a-f], and
+    # face subtopics will be created on the fly.
+    preallocate = rospy.get_param("~preallocate_topics", False)
+
+    detector = RosFaceDetector(debug, preallocate)
 
     rospy.spin()
