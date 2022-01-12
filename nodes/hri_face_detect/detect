@@ -5,6 +5,7 @@ import cv2
 import uuid
 
 import mediapipe as mp
+
 mp_face_detection = mp.solutions.face_detection
 
 import rospy
@@ -32,21 +33,21 @@ MAX_ROIS_DISTANCE = 20
 # belong to the same person
 MAX_SCALING_ROIS = 1.2
 
+
 class FaceDetector:
     def __init__(self):
 
         self.detector = mp_face_detection.FaceDetection(
-                            model_selection=1,
-                            min_detection_confidence=0.5)
+            model_selection=1, min_detection_confidence=0.5
+        )
 
     def detect(self, img):
-        """img is expected as RGB
-        """
+        """img is expected as RGB"""
         img_rows, img_cols, _ = img.shape
 
         return self.get_boundingboxes(
-                        self.detector.process(img).detections,
-                        img_cols, img_rows)
+            self.detector.process(img).detections, img_cols, img_rows
+        )
 
     def get_boundingboxes(self, detections, image_cols, image_rows):
         """
@@ -59,19 +60,23 @@ class FaceDetector:
         for detection in detections:
             bb = detection.location_data.relative_bounding_box
             x, y = self.normalized_to_pixel_coordinates(
-                        bb.xmin, bb.ymin,
-                        image_cols, image_rows)
+                bb.xmin, bb.ymin, image_cols, image_rows
+            )
             w, h = self.normalized_to_pixel_coordinates(
-                        bb.width, bb.height,
-                        image_cols, image_rows)
+                bb.width, bb.height, image_cols, image_rows
+            )
 
-            res.append((x,y,w,h))
+            res.append((x, y, w, h))
 
         return res
 
-    def normalized_to_pixel_coordinates(self,
-            normalized_x: float, normalized_y: float, image_width: int,
-            image_height: int):
+    def normalized_to_pixel_coordinates(
+        self,
+        normalized_x: float,
+        normalized_y: float,
+        image_width: int,
+        image_height: int,
+    ):
 
         x_px = min(math.floor(normalized_x * image_width), image_width - 1)
         y_px = min(math.floor(normalized_y * image_height), image_height - 1)
@@ -80,13 +85,15 @@ class FaceDetector:
     def __str__(self):
         return "Google mediapipe face detector"
 
-class RosFaceDetector:
 
+class RosFaceDetector:
     def __init__(self, debug=False):
-        
+
         self.debug = debug
 
-        semaphore_pub = rospy.Publisher("/hri_face_detect/ready", Empty , queue_size=1, latch=True)
+        semaphore_pub = rospy.Publisher(
+            "/hri_face_detect/ready", Empty, queue_size=1, latch=True
+        )
         self.faces_pub = rospy.Publisher("/humans/faces/tracked", IdsList, queue_size=1)
 
         self.facedetector = FaceDetector()
@@ -115,34 +122,40 @@ class RosFaceDetector:
         # ID -> (publisher, RoI, nb_frames_visible)
         self.detectedFaces = {}
 
-
     def find_previous_match(self, bb):
         for id, value in self.detectedFaces.items():
             _, prev_bb, _ = value
-            if self.distance_rois(prev_bb, bb) < MAX_ROIS_DISTANCE * MAX_ROIS_DISTANCE \
-            and 1/MAX_SCALING_ROIS < prev_bb.width/bb.width < MAX_SCALING_ROIS \
-            and 1/MAX_SCALING_ROIS < prev_bb.height/bb.height < MAX_SCALING_ROIS:
+            if (
+                self.distance_rois(prev_bb, bb) < MAX_ROIS_DISTANCE * MAX_ROIS_DISTANCE
+                and 1 / MAX_SCALING_ROIS < prev_bb.width / bb.width < MAX_SCALING_ROIS
+                and 1 / MAX_SCALING_ROIS < prev_bb.height / bb.height < MAX_SCALING_ROIS
+            ):
                 return id
         return None
 
-    def callback(self, rgb_msg,):
+    def callback(
+        self,
+        rgb_msg,
+    ):
 
         image = CvBridge().imgmsg_to_cv2(rgb_msg, desired_encoding="rgb8")
         img_height, img_width, _ = image.shape
-        #camera_info_K = np.array(camera_info.K).reshape([3, 3])
-        #camera_info_D = np.array(camera_info.D)
-        #rgb_undist = cv2.undistort(rgb_image, camera_info_K, camera_info_D)
+        # camera_info_K = np.array(camera_info.K).reshape([3, 3])
+        # camera_info_D = np.array(camera_info.D)
+        # rgb_undist = cv2.undistort(rgb_image, camera_info_K, camera_info_D)
 
         bbs = self.facedetector.detect(image)
 
         currentFaces = {}
         for bb in bbs:
             x, y, w, h = bb
-            bb = RegionOfInterest(max(0, x), 
-                                max(0, y), 
-                                min(img_height-y, h), 
-                                min(img_width-x, w), 
-                                True)
+            bb = RegionOfInterest(
+                max(0, x),
+                max(0, y),
+                min(img_height - y, h),
+                min(img_width - x, w),
+                True,
+            )
 
             id = self.find_previous_match(bb)
             if id:
@@ -162,7 +175,11 @@ class RosFaceDetector:
 
                     currentFaces[final_id] = (pub, bb, self.detectedFaces[id][2] + 1)
                 else:
-                    currentFaces[id] = (self.detectedFaces[id][0], bb, self.detectedFaces[id][2] + 1)
+                    currentFaces[id] = (
+                        self.detectedFaces[id][0],
+                        bb,
+                        self.detectedFaces[id][2] + 1,
+                    )
             else:
                 # we 'provisionally' store the face - we'll create a publisher and start publishing only if we see the
                 # face a second time
@@ -174,7 +191,10 @@ class RosFaceDetector:
             if id not in currentFaces:
                 pub, _, nb_frames = value
                 if pub:
-                    rospy.loginfo("Face [face_%s] lost. It remained visible for %s frames" % (id, nb_frames))
+                    rospy.loginfo(
+                        "Face [face_%s] lost. It remained visible for %s frames"
+                        % (id, nb_frames)
+                    )
                     pub.unregister()
 
         self.detectedFaces = currentFaces
@@ -198,22 +218,30 @@ class RosFaceDetector:
                 pub, bb, nb_frames = value
                 if not pub:
                     continue
-                cv2.rectangle(image, (bb.x_offset, bb.y_offset), \
-                                (bb.x_offset + bb.width, bb.y_offset + bb.height),\
-                                (255,255,0), 2)
-                cv2.putText(image, id,(bb.x_offset, bb.y_offset), \
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1,
-                                    (255,0,0))
+                cv2.rectangle(
+                    image,
+                    (bb.x_offset, bb.y_offset),
+                    (bb.x_offset + bb.width, bb.y_offset + bb.height),
+                    (255, 255, 0),
+                    2,
+                )
+                cv2.putText(
+                    image,
+                    id,
+                    (bb.x_offset, bb.y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (255, 0, 0),
+                )
 
-            cv2.imshow('MediaPipe Face Detection', image)
+            cv2.imshow("MediaPipe Face Detection", image)
             cv2.waitKey(5)
 
-
     def distance_rois(self, bb1, bb2):
-        x1, y1 = bb1.x_offset + bb1.width/2, bb1.y_offset + bb1.height/2
-        x2, y2 = bb2.x_offset + bb2.width/2, bb2.y_offset + bb2.height/2
+        x1, y1 = bb1.x_offset + bb1.width / 2, bb1.y_offset + bb1.height / 2
+        x2, y2 = bb2.x_offset + bb2.width / 2, bb2.y_offset + bb2.height / 2
 
-        return (x1-x2) * (x1-x2) + (y1-y2) * (y1-y2)
+        return (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2)
 
     def generate_face_id(self):
         if DETERMINISTIC_ID:
@@ -222,16 +250,15 @@ class RosFaceDetector:
             return id_str
 
         else:
-            return str(uuid.uuid4())[:5] # for a 5 char long ID
+            return str(uuid.uuid4())[:5]  # for a 5 char long ID
 
     def generate_tmp_face_id(self):
-        return str(uuid.uuid4())[:5] # for a 5 char long ID
+        return str(uuid.uuid4())[:5]  # for a 5 char long ID
 
 
-if __name__ == '__main__':
-   rospy.init_node('hri_face_detect')
+if __name__ == "__main__":
+    rospy.init_node("hri_face_detect")
 
-   detector = RosFaceDetector(debug=rospy.get_param('~debug', False))
+    detector = RosFaceDetector(debug=rospy.get_param("~debug", False))
 
-   rospy.spin()
-
+    rospy.spin()
