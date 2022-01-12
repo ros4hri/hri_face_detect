@@ -12,7 +12,7 @@ from cv_bridge import CvBridge
 
 from std_msgs.msg import Empty
 from sensor_msgs.msg import Image, CameraInfo, RegionOfInterest
-from hri_msgs.msg import IdsList, RegionOfInterestStamped
+from hri_msgs.msg import IdsList
 
 # if set to true, face IDs will be generated as a sequence of integers,
 # starting at 00001.
@@ -94,11 +94,19 @@ class RosFaceDetector:
 
         # holds all the individual face publishers -- only used when pre-allocating face publishers
         if PREALLOCATE_PUBLISHERS:
-            self.face_pubs = {"%05d" % i : rospy.Publisher("/humans/faces/%05d/roi" % i, RegionOfInterestStamped, queue_size=1) for i in range(1,30)}
+            self.face_pubs = {
+                "%05d"
+                % i: rospy.Publisher(
+                    "/humans/faces/%05d/roi" % i, RegionOfInterest, queue_size=1
+                )
+                for i in range(1, 30)
+            }
         else:
             self.face_pubs = []
 
-        rospy.loginfo("Ready. Waiting for images to be published on %s." % self.image_sub.name)
+        rospy.loginfo(
+            "Ready. Waiting for images to be published on %s." % self.image_sub.name
+        )
         semaphore_pub.publish(Empty())
 
         # last-used face id
@@ -146,7 +154,11 @@ class RosFaceDetector:
                     if PREALLOCATE_PUBLISHERS:
                         pub = self.face_pubs[final_id]
                     else:
-                        pub = rospy.Publisher("/humans/faces/%s/roi" % final_id, RegionOfInterestStamped, queue_size=1)
+                        pub = rospy.Publisher(
+                            "/humans/faces/%s/roi" % final_id,
+                            RegionOfInterest,
+                            queue_size=1,
+                        )
 
                     currentFaces[final_id] = (pub, bb, self.detectedFaces[id][2] + 1)
                 else:
@@ -173,8 +185,7 @@ class RosFaceDetector:
             pub, bb, _ = value
             if pub:
                 list_ids.append(str(id))
-                pub.publish(RegionOfInterestStamped(rgb_msg.header, bb))
-
+                pub.publish(bb)
 
         self.faces_pub.publish(IdsList(rgb_msg.header, list_ids))
 
