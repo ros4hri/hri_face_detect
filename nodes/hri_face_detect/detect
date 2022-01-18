@@ -2,6 +2,7 @@
 
 import math
 import cv2
+import numpy as np
 import uuid
 from functools import partial
 
@@ -24,6 +25,11 @@ MAX_ROIS_DISTANCE = 20
 # max scale factor between two successive regions of interest to consider they
 # belong to the same person
 MAX_SCALING_ROIS = 1.2
+
+# default size in pixels for the re-published faces
+# can be changed via the ROS parameters /humans/faces/width and /humans/faces/height
+cropped_face_width = 128
+cropped_face_height = 128
 
 
 class FaceDetector:
@@ -97,8 +103,13 @@ class RosFaceDetector:
         if preallocate:
             self.face_pubs = {
                 "%05d"
-                % i: rospy.Publisher(
-                    "/humans/faces/%05d/roi" % i, RegionOfInterest, queue_size=1
+                % i: (
+                    rospy.Publisher(
+                        "/humans/faces/%05d/roi" % i, RegionOfInterest, queue_size=1
+                    ),
+                    rospy.Publisher(
+                        "/humans/faces/%05d/cropped" % i, Image, queue_size=1
+                    ),
                 )
                 for i in range(1, 30)
             }
@@ -127,9 +138,49 @@ class RosFaceDetector:
                 return id
         return None
 
+    def publish_cropped_faces(self, src_image, bbs_and_publishers):
+
+        for id, kv in bbs_and_publishers.items():
+            pubs, bb, _ = kv
+
+            if not pubs:
+                continue
+
+            # no-one interested in the face image? skip it!
+            if pubs[1].get_num_connections() == 0 and not self.debug:
+                continue
+
+            roi = src_image[
+                bb.y_offset : bb.y_offset + bb.height,
+                bb.x_offset : bb.x_offset + bb.width,
+            ]
+
+            sx = cropped_face_width * 1.0 / bb.width
+            sy = cropped_face_height * 1.0 / bb.height
+
+            scale = min(sx, sy)
+
+            scaled = cv2.resize(roi, None, fx=scale, fy=scale)
+            scaled_h, scaled_w = scaled.shape[:2]
+
+            output = np.zeros((cropped_face_width, cropped_face_height, 3), np.uint8)
+
+            x_offset = int((cropped_face_width - scaled_w) / 2)
+            y_offset = int((cropped_face_height - scaled_h) / 2)
+
+            output[
+                y_offset : y_offset + scaled_h, x_offset : x_offset + scaled_w
+            ] = scaled
+
+            if self.debug:
+
+                cv2.imshow("Face %s" % id, output)
+
+            pubs[1].publish(CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
+
     def callback(self, preallocate, rgb_msg):
 
-        image = CvBridge().imgmsg_to_cv2(rgb_msg, desired_encoding="rgb8")
+        image = CvBridge().imgmsg_to_cv2(rgb_msg, desired_encoding="bgr8")
         img_height, img_width, _ = image.shape
         # camera_info_K = np.array(camera_info.K).reshape([3, 3])
         # camera_info_D = np.array(camera_info.D)
@@ -157,15 +208,22 @@ class RosFaceDetector:
                     rospy.loginfo("New face [face_%s]" % final_id)
 
                     if preallocate:
-                        pub = self.face_pubs[final_id]
+                        pubs = self.face_pubs[final_id]
                     else:
-                        pub = rospy.Publisher(
-                            "/humans/faces/%s/roi" % final_id,
-                            RegionOfInterest,
-                            queue_size=1,
+                        pubs = (
+                            rospy.Publisher(
+                                "/humans/faces/%s/roi" % final_id,
+                                RegionOfInterest,
+                                queue_size=1,
+                            ),
+                            rospy.Publisher(
+                                "/humans/faces/%s/cropped" % final_id,
+                                Image,
+                                queue_size=1,
+                            ),
                         )
 
-                    currentFaces[final_id] = (pub, bb, self.detectedFaces[id][2] + 1)
+                    currentFaces[final_id] = (pubs, bb, self.detectedFaces[id][2] + 1)
                 else:
                     currentFaces[id] = (
                         self.detectedFaces[id][0],
@@ -181,24 +239,26 @@ class RosFaceDetector:
         # iterate over faces not seen anymore, and unregister corresponding publishers
         for id, value in self.detectedFaces.items():
             if id not in currentFaces:
-                pub, _, nb_frames = value
-                if pub:
+                pubs, _, nb_frames = value
+                if pubs:
                     rospy.loginfo(
                         "Face [face_%s] lost. It remained visible for %s frames"
                         % (id, nb_frames)
                     )
-                    pub.unregister()
+                    for pub in pubs:
+                        pub.unregister()
 
         self.detectedFaces = currentFaces
 
         list_ids = []
 
         for id, value in self.detectedFaces.items():
-            pub, bb, _ = value
-            if pub:
+            pubs, bb, _ = value
+            if pubs:
                 list_ids.append(str(id))
-                pub.publish(bb)
+                pubs[0].publish(bb)
 
+        self.publish_cropped_faces(image, self.detectedFaces)
         self.faces_pub.publish(IdsList(rgb_msg.header, list_ids))
 
         if self.debug:
@@ -250,6 +310,9 @@ class RosFaceDetector:
 
 if __name__ == "__main__":
     rospy.init_node("hri_face_detect")
+
+    cropped_face_width = rospy.get_param("/humans/faces/width", cropped_face_width)
+    cropped_face_height = rospy.get_param("/humans/faces/height", cropped_face_height)
 
     debug = rospy.get_param("~debug", False)
 
