@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.1.0 (2022-01-18)
+------------------
 * publish cropped faces under subtopic /cropped
 * add _preallocate_topics parameter (instead of hard-coded constant)
 * code formatting
