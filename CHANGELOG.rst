@@ -2,6 +2,14 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* publish cropped faces under subtopic /cropped
+* add _preallocate_topics parameter (instead of hard-coded constant)
+* code formatting
+* RegionOfInterestStamped -> regionOfInterest to match changes in hri_msgs 0.2.1
+* Contributors: Séverin Lemaignan
+
 1.0.1 (2021-11-09)
 ------------------
 * Added the dependency on python-mediapipe
