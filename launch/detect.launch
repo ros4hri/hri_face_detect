@@ -1,11 +1,11 @@
 <launch>
 
     <arg name="image_topic" default="/camera/color/image_raw"/>
-    <arg name="rgb_camera_info" default="/camera/color/camera_info"/>
+    <arg name="camera_info" default="/camera/color/camera_info"/>
 
     <node pkg="hri_face_detect" name="hri_face_detect" type="detect" output="screen">
         <remap from="image" to="$(arg image_topic)"/>
-        <remap from="/rgb_info" to="$(arg rgb_camera_info)"/>
+        <remap from="camera_info" to="$(arg camera_info)"/>
     </node>
 
 </launch>
