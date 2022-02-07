@@ -4,6 +4,7 @@ import tf
 from hri_msgs.msg import IdsList, FacialLandmarks, PointOfInterest2D
 from sensor_msgs.msg import Image, CameraInfo, RegionOfInterest
 from std_msgs.msg import Empty
+import tf_conversions.posemath as pm
 from cv_bridge import CvBridge
 import rospy
 import math
@@ -11,6 +12,7 @@ import cv2
 import numpy as np
 import uuid
 from functools import partial
+from tf.transformations import quaternion_from_euler
 
 import mediapipe as mp
 
@@ -26,28 +28,30 @@ MAX_ROIS_DISTANCE = 20
 MAX_SCALING_ROIS = 1.2
 
 # default size in pixels for the re-published faces
-# can be changed via the ROS parameters /humans/faces/width and /humans/faces/height
+# can be changed via the ROS parameters
+# /humans/faces/width and /humans/faces/height
 cropped_face_width = 128
 cropped_face_height = 128
 
 # face key points
 # These use a different reference frame maybe?
-P3D_RIGHT_EYE = (-20., -65.5,-5.)
-P3D_LEFT_EYE = (-20., 65.5,-5.)
-P3D_RIGHT_EAR = (-100., -77.5,-6.)
-P3D_LEFT_EAR = (-100., 77.5,-6.)
-P3D_NOSE = (21.0, 0., -48.0)
+P3D_RIGHT_EYE = (-20., -65.5, -5.)
+P3D_LEFT_EYE = (-20., 65.5, -5.)
+P3D_RIGHT_EAR = (-100., -77.5, -6.)
+P3D_LEFT_EAR = (-100., 77.5, -6.)   
+P3D_NOSE = (21.0, 0., -48.0)   
 P3D_STOMION = (10.0, 0., -75.0)
 
+
 points_3D = np.array([
-    P3D_NOSE,       
+    P3D_NOSE,
     P3D_RIGHT_EYE,
     P3D_LEFT_EYE,
     P3D_STOMION,
     P3D_RIGHT_EAR,
     P3D_LEFT_EAR]
-) # ==> No need to do this every time, can just create it
-  # as a global array
+)
+
 
 def normalized_to_pixel_coordinates(
     normalized_x: float,
@@ -87,24 +91,26 @@ class FaceDetector:
         if detections:
             for detection in detections:
 
-                nose_tip = mp_face_detection.get_key_point(detection, 
+                nose_tip = mp_face_detection.get_key_point(detection,
                     mp_face_detection.FaceKeyPoint.NOSE_TIP)
                 nose_tips.append([nose_tip.x, nose_tip.y])
-                right_eye = mp_face_detection.get_key_point(detection, 
+                right_eye = mp_face_detection.get_key_point(detection,
                     mp_face_detection.FaceKeyPoint.RIGHT_EYE)
                 right_eyes.append([right_eye.x, right_eye.y])
-                left_eye = mp_face_detection.get_key_point(detection, 
+                left_eye = mp_face_detection.get_key_point(detection,
                     mp_face_detection.FaceKeyPoint.LEFT_EYE)
                 left_eyes.append([left_eye.x, left_eye.y])
-                mouth_center = mp_face_detection.get_key_point(detection, 
+                mouth_center = mp_face_detection.get_key_point(detection,
                     mp_face_detection.FaceKeyPoint.MOUTH_CENTER)
                 mouth_centers.append([mouth_center.x, mouth_center.y])
-                right_ear_tragion = mp_face_detection.get_key_point(detection, 
-                    mp_face_detection.FaceKeyPoint.RIGHT_EAR_TRAGION)             
-                right_ear_tragions.append([right_ear_tragion.x, right_ear_tragion.y])
-                left_ear_tragion = mp_face_detection.get_key_point(detection, 
-                    mp_face_detection.FaceKeyPoint.LEFT_EAR_TRAGION)             
-                left_ear_tragions.append([left_ear_tragion.x, left_ear_tragion.y])
+                right_ear_tragion = mp_face_detection.get_key_point(detection,
+                    mp_face_detection.FaceKeyPoint.RIGHT_EAR_TRAGION)
+                right_ear_tragions.append(
+                    [right_ear_tragion.x, right_ear_tragion.y])
+                left_ear_tragion = mp_face_detection.get_key_point(detection,
+                    mp_face_detection.FaceKeyPoint.LEFT_EAR_TRAGION)
+                left_ear_tragions.append(
+                    [left_ear_tragion.x, left_ear_tragion.y])
 
         results.append(nose_tips)
         results.append(right_eyes)
@@ -206,7 +212,7 @@ class RosFaceDetector:
     def publish_cropped_faces(self, src_image, bbs_and_publishers):
 
         for id, kv in bbs_and_publishers.items():
-            pubs, bb, _, _= kv
+            pubs, bb, _, _ = kv
 
             if not pubs:
                 continue
@@ -281,35 +287,46 @@ class RosFaceDetector:
             )
 
             landmarks = FacialLandmarks(
-                [PointOfInterest2D(0, 0, 1) for _ in range(70)], 
-                img_height, 
+                [PointOfInterest2D(0, 0, 1) for _ in range(70)],
+                img_height,
                 img_width)
 
-            # Setting the landmarks. The values provided by the 
+            # Setting the landmarks. The values provided by the
             # MediaPipe estimatore used here are mapped according
             # to the ROS4HRI facial landmarks convention
 
             landmarks.landmarks[FacialLandmarks.NOSE].x = nose_tips[i][0]
             landmarks.landmarks[FacialLandmarks.NOSE].y = nose_tips[i][1]
 
-            landmarks.landmarks[FacialLandmarks.RIGHT_PUPIL].x = right_eyes[i][0]
-            landmarks.landmarks[FacialLandmarks.RIGHT_PUPIL].y = right_eyes[i][1]
+            landmarks.landmarks[FacialLandmarks.RIGHT_PUPIL].x = \
+                right_eyes[i][0]
+            landmarks.landmarks[FacialLandmarks.RIGHT_PUPIL].y = \
+                right_eyes[i][1]
 
-            landmarks.landmarks[FacialLandmarks.LEFT_PUPIL].x = left_eyes[i][0]
-            landmarks.landmarks[FacialLandmarks.LEFT_PUPIL].y = left_eyes[i][1]
+            landmarks.landmarks[FacialLandmarks.LEFT_PUPIL].x = \
+                left_eyes[i][0]
+            landmarks.landmarks[FacialLandmarks.LEFT_PUPIL].y = \
+                left_eyes[i][1]
 
-            landmarks.landmarks[FacialLandmarks.RIGHT_EAR].x = right_ear_tragions[i][0]
-            landmarks.landmarks[FacialLandmarks.RIGHT_EAR].y = right_ear_tragions[i][1]
+            landmarks.landmarks[FacialLandmarks.RIGHT_EAR].x = \
+                right_ear_tragions[i][0]
+            landmarks.landmarks[FacialLandmarks.RIGHT_EAR].y = \
+                right_ear_tragions[i][1]
 
-            landmarks.landmarks[FacialLandmarks.LEFT_EAR].x = left_ear_tragions[i][0]
-            landmarks.landmarks[FacialLandmarks.LEFT_EAR].y = left_ear_tragions[i][1]
+            landmarks.landmarks[FacialLandmarks.LEFT_EAR].x = \
+                left_ear_tragions[i][0]
+            landmarks.landmarks[FacialLandmarks.LEFT_EAR].y = \
+                left_ear_tragions[i][1]
 
-            landmarks.landmarks[FacialLandmarks.MOUTH_INNER_TOP_2].x = mouth_centers[i][0]
-            landmarks.landmarks[FacialLandmarks.MOUTH_INNER_TOP_2].y = mouth_centers[i][1]
+            landmarks.landmarks[FacialLandmarks.MOUTH_INNER_TOP_2].x = \
+                mouth_centers[i][0]
+            landmarks.landmarks[FacialLandmarks.MOUTH_INNER_TOP_2].y = \
+                mouth_centers[i][1]
 
             id = self.find_previous_match(bb)
             if id:
-                # we re-detect a face: if it is a 2nd frame, we create a publisher for it.
+                # we re-detect a face
+                # if it is a 2nd frame, we create a publisher for it.
                 if not self.detectedFaces[id][0]:
                     want_deterministic_id = preallocate
                     final_id = self.generate_face_id(want_deterministic_id)
@@ -329,10 +346,11 @@ class RosFaceDetector:
                                 Image,
                                 queue_size=1,
                             ),
-                            rospy.Publisher("/humans/faces/%s/landmarks" % final_id,
-                                FacialLandmarks,
-                                queue_size=1,
-                            )
+                            rospy.Publisher("/humans/faces/%s/landmarks"
+                                            % final_id,
+                                            FacialLandmarks,
+                                            queue_size=1,
+                                            )
                         )
 
                     currentFaces[final_id] = (
@@ -377,44 +395,108 @@ class RosFaceDetector:
                                 left_ear_tragions[i][1],
                                 img_width,
                                 img_height)
-                            ], dtype="double")
+                        ], dtype="double")
 
                         success, rotation_vector, translation_vector = cv2.solvePnP(
-                                points_3D, 
-                                points_2D, 
-                                self.K, 
-                                None,
-                                tvec=np.array([0., 0., 1000.]),
-                                rvec=np.array([1., 0., 0.]) ,
-                                flags=0,
-                                useExtrinsicGuess=False)
-                        
+                            points_3D,
+                            points_2D,
+                            self.K,
+                            None,
+                            tvec=np.array([0., 0., 1000.]),
+                            useExtrinsicGuess=True,
+                            flags=4)
+
                         theta = np.sqrt(
-                            rotation_vector[0]**2 \
-                            + rotation_vector[1]**2 \
+                            rotation_vector[0]**2
+                            + rotation_vector[1]**2
                             + rotation_vector[2]**2)
-                        
+
                         a = np.cos(theta/2)
                         b = rotation_vector[0]*np.sin(theta/2)/theta
                         c = rotation_vector[1]*np.sin(theta/2)/theta
                         d = rotation_vector[2]*np.sin(theta/2)/theta
 
                         norm = a**2 + b**2 + c**2 + d**2
+                        """q_rpy = quaternion_from_euler(rpy[0], rpy[1], rpy[2])
+                        norm = q_rpy[0]**2 + q_rpy[1]**2 + q_rpy[2]**2 + q_rpy[3]**2
+
+                        a_inv = q_rpy[0]/norm
+                        b_inv = -q_rpy[1]/norm
+                        c_inv = -q_rpy[2]/norm
+                        d_inv = -q_rpy[3]/norm"""
+
                         a_inv = a/norm
-                        b_inv = -b/norm 
-                        c_inv = -c/norm 
+                        b_inv = -b/norm
+                        c_inv = -c/norm
                         d_inv = -d/norm
 
-                        self.tb.sendTransform(
-                            (-translation_vector[0]/1000, \
-                             -translation_vector[1]/1000, \
-                             -translation_vector[2]/1000),
+                        """q = quaternion_from_euler(-1.5707, -1.5707, 0)
+
+                        a_tf = a_inv*q[0] - b_inv*q[1] - c_inv*q[2] - d_inv*q[3]
+                        b_tf = a_inv*q[1] + b_inv*q[1] + c_inv*q[3] - d_inv*q[2]
+                        c_tf = a_inv*q[2] - b_inv*q[3] + c_inv*q[0] + d_inv*q[1]
+                        d_tf = a_inv*q[3] + b_inv*q[2] - c_inv*q[1] + d_inv*q[0]"""
+
+                        """self.tb.sendTransform(
+                            (translation_vector[0]/1000,
+                             translation_vector[1]/1000,
+                             translation_vector[2]/1000),
                             (a, b, c, d),
                             rospy.Time.now(),
-                            "face"+id,
-                            "camera_color_optical_frame")
+                            "camera_color_optical_frame",
+                            "face")"""
+
+                        """if not hasattr(self, 'trans_x'):
+                            self.alpha = 0.1
+                            self.beta = 0.1
+                            self.trans_x = translation_vector[0]/1000
+                            self.trans_y = translation_vector[1]/1000
+                            self.trans_z = translation_vector[2]/1000
+                            self.vel_x = 0
+                            self.vel_y = 0
+                            self.vel_z = 0
+                            self.last_t = rospy.Time.now()
+                        else:
+                            delta_t = rospy.Time.now() - self.last_t
+                            delta_t = delta_t.to_sec()
+                            # prediction
+                            trans_x_pred = self.trans_x + delta_t*self.vel_x
+                            trans_y_pred = self.trans_y + delta_t*self.vel_y
+                            trans_z_pred = self.trans_z + delta_t*self.vel_z
+                            # residuals
+                            residual_x = translation_vector[0]/1000 - trans_x_pred
+                            residual_y = translation_vector[1]/1000 - trans_y_pred
+                            residual_z = translation_vector[2]/1000 - trans_z_pred
+                            # update
+                            self.trans_x = (1-self.alpha)*trans_x_pred + (self.alpha*translation_vector[0]/1000) 
+                            self.trans_y = (1-self.alpha)*trans_y_pred + (self.alpha*translation_vector[1]/1000)
+                            self.trans_z = (1-self.alpha)*trans_z_pred + (self.alpha*translation_vector[2]/1000)
+                            self.vel_x = self.vel_x + (self.beta*residual_x/delta_t)
+                            self.vel_y = self.vel_y + (self.beta*residual_y/delta_t) 
+                            self.vel_z = self.vel_z + (self.beta*residual_z/delta_t)"""
 
                     #######################
+                    # calculating angle
+                        rmat, jac = cv2.Rodrigues(rotation_vector)
+                        angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
+                        self.tb.sendTransform((translation_vector[0]/1000,
+                                               translation_vector[1]/1000,
+                                               translation_vector[2]/1000),
+                            tf.transformations.quaternion_from_euler(
+                                angles[0]/180*np.pi, 
+                                angles[1]/180*np.pi, 
+                                angles[2]/180*np.pi),
+                            rospy.Time.now(),
+                            "face",
+                            "camera_color_optical_frame")
+                        self.tb.sendTransform((0, 0, 0),
+                            tf.transformations.quaternion_from_euler(
+                                -np.pi/2, 
+                                0, 
+                                -np.pi/2),
+                            rospy.Time.now(),
+                            "gaze"+id,
+                            "face"+id)
             else:
                 # we 'provisionally' store the face - we'll create a publisher and start publishing only if we see the
                 # face a second time
