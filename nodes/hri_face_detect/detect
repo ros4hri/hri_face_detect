@@ -17,13 +17,15 @@ from tf.transformations import quaternion_from_euler
 import mediapipe as mp
 
 mp_face_detection = mp.solutions.face_detection
+mp_face_mesh = mp.solutions.face_mesh
 
-
-# nb of pixels between the centers of to successive regions of interest to
+# nb of pixels between the centers of 
+# two successive regions of interest to
 # consider they belong to the same person
 MAX_ROIS_DISTANCE = 20
 
-# max scale factor between two successive regions of interest to consider they
+# max scale factor between two successive 
+# regions of interest to consider they
 # belong to the same person
 MAX_SCALING_ROIS = 1.2
 
@@ -66,11 +68,18 @@ def normalized_to_pixel_coordinates(
 
 
 class FaceDetector:
-    def __init__(self):
+    def __init__(self, face_mesh=True):
 
-        self.detector = mp_face_detection.FaceDetection(
-            model_selection=1, min_detection_confidence=0.5
-        )
+        if not face_mesh:
+            self.detector = mp_face_detection.FaceDetection(
+                model_selection=1, min_detection_confidence=0.5
+            )
+        else:
+            self.detector = mp_face_mesh.FaceMesh(
+            static_image_mode=True,
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5)
 
     def detect(self, img):
         """img is expected as RGB"""
@@ -121,6 +130,68 @@ class FaceDetector:
 
         return results
 
+    def detect_face_mesh(self, img):
+        """img is expected as RGB"""
+        img_rows, img_cols, _ = img.shape
+
+        detections = self.detector.process(img)
+        results = []
+        #results.append(self.get_boundingboxes(
+        #    detections, img_cols, img_rows))
+        bbs = []
+        nose_tips = []
+        right_eyes = []
+        left_eyes = []
+        mouth_centers = []
+        right_ear_tragions = []
+        left_ear_tragions = []
+
+        if detections and detections.multi_face_landmarks:
+            for detection in detections.multi_face_landmarks:
+                x_min = 1
+                y_min = 1
+                x_max = 0
+                y_max = 0
+                for idx, landmark in enumerate(detection.landmark):
+                    if landmark.x < x_min:
+                        x_min = landmark.x 
+                    if landmark.y < y_min:
+                        y_min = landmark.y 
+                    if landmark.x > x_max:
+                        x_max = landmark.x 
+                    if landmark.y > y_max:
+                        y_max = landmark.y 
+                    if idx == 1:
+                        nose_tips.append([landmark.x, landmark.y])
+                    if idx == 13:
+                        mouth_centers.append([landmark.x, landmark.y])
+                    if idx == 159:
+                        right_eyes.append([landmark.x, landmark.y])
+                    if idx == 234:
+                        right_ear_tragions.append([landmark.x, landmark.y])
+                    if idx == 386:
+                        left_eyes.append([landmark.x, landmark.y])
+                    if idx == 454:
+                        left_ear_tragions.append([landmark.x, landmark.y])                    
+
+                x, y = normalized_to_pixel_coordinates(
+                    x_min, y_min, img_cols, img_rows
+                )
+                w, h = normalized_to_pixel_coordinates(
+                    x_max-x_min, y_max-y_min, img_cols, img_rows
+                )
+                bbs.append((x, y, w, h))
+
+        results.append(bbs)
+        results.append(nose_tips)
+        results.append(right_eyes)
+        results.append(left_eyes)
+        results.append(mouth_centers)
+        results.append(right_ear_tragions)
+        results.append(left_ear_tragions)
+
+        return results
+
     def get_boundingboxes(self, detections, image_cols, image_rows):
         """
         Based on https://github.com/google/mediapipe/blob/master/mediapipe/python/solutions/drawing_utils.py
@@ -147,9 +218,10 @@ class FaceDetector:
 
 
 class RosFaceDetector:
-    def __init__(self, debug=False, preallocate=False):
+    def __init__(self, debug=False, preallocate=False, face_mesh=True):
 
         self.debug = debug
+        self.face_mesh = face_mesh
 
         semaphore_pub = rospy.Publisher(
             "/hri_face_detect/ready", Empty, queue_size=1, latch=True
@@ -157,7 +229,7 @@ class RosFaceDetector:
         self.faces_pub = rospy.Publisher(
             "/humans/faces/tracked", IdsList, queue_size=1)
 
-        self.facedetector = FaceDetector()
+        self.facedetector = FaceDetector(face_mesh)
         self.image_sub = rospy.Subscriber(
             "image", Image, partial(self.callback, preallocate)
         )
@@ -167,16 +239,21 @@ class RosFaceDetector:
         self.debug_image_publisher = rospy.Publisher(
             "/debug_head_pose_image", Image, queue_size=1)
 
-        # holds all the individual face publishers -- only used when pre-allocating face publishers
+        # holds all the individual face publishers 
+        # only used when pre-allocating face publishers
         if preallocate:
             self.face_pubs = {
                 "%05d"
                 % i: (
                     rospy.Publisher(
-                        "/humans/faces/%05d/roi" % i, RegionOfInterest, queue_size=1
+                        "/humans/faces/%05d/roi" % i, 
+                        RegionOfInterest, 
+                        queue_size=1
                     ),
                     rospy.Publisher(
-                        "/humans/faces/%05d/cropped" % i, Image, queue_size=1
+                        "/humans/faces/%05d/cropped" % i, 
+                        Image, 
+                        queue_size=1
                     ),
                 )
                 for i in range(1, 30)
@@ -185,7 +262,8 @@ class RosFaceDetector:
             self.face_pubs = []
 
         rospy.loginfo(
-            "Ready. Waiting for images to be published on %s." % self.image_sub.name
+            "Ready. Waiting for images to be published on %s." \
+            % self.image_sub.name
         )
         semaphore_pub.publish(Empty())
 
@@ -266,7 +344,12 @@ class RosFaceDetector:
         image = CvBridge().imgmsg_to_cv2(rgb_msg, desired_encoding="bgr8")
         img_height, img_width, _ = image.shape
 
-        detections = self.facedetector.detect(image)
+        if not self.face_mesh:
+            print('no face mesh')
+            detections = self.facedetector.detect(image)
+        else:
+            print('face_mesh')
+            detections = self.facedetector.detect_face_mesh(image)
         bbs = detections[0]
         nose_tips = detections[1]
         right_eyes = detections[2]
@@ -397,7 +480,7 @@ class RosFaceDetector:
                                 img_height)
                         ], dtype="double")
 
-                        success, rotation_vector, translation_vector = cv2.solvePnP(
+                        success, rot_vec, trans_vec = cv2.solvePnP(
                             points_3D,
                             points_2D,
                             self.K,
@@ -406,88 +489,18 @@ class RosFaceDetector:
                             useExtrinsicGuess=True,
                             flags=4)
 
-                        theta = np.sqrt(
-                            rotation_vector[0]**2
-                            + rotation_vector[1]**2
-                            + rotation_vector[2]**2)
-
-                        a = np.cos(theta/2)
-                        b = rotation_vector[0]*np.sin(theta/2)/theta
-                        c = rotation_vector[1]*np.sin(theta/2)/theta
-                        d = rotation_vector[2]*np.sin(theta/2)/theta
-
-                        norm = a**2 + b**2 + c**2 + d**2
-                        """q_rpy = quaternion_from_euler(rpy[0], rpy[1], rpy[2])
-                        norm = q_rpy[0]**2 + q_rpy[1]**2 + q_rpy[2]**2 + q_rpy[3]**2
-
-                        a_inv = q_rpy[0]/norm
-                        b_inv = -q_rpy[1]/norm
-                        c_inv = -q_rpy[2]/norm
-                        d_inv = -q_rpy[3]/norm"""
-
-                        a_inv = a/norm
-                        b_inv = -b/norm
-                        c_inv = -c/norm
-                        d_inv = -d/norm
-
-                        """q = quaternion_from_euler(-1.5707, -1.5707, 0)
-
-                        a_tf = a_inv*q[0] - b_inv*q[1] - c_inv*q[2] - d_inv*q[3]
-                        b_tf = a_inv*q[1] + b_inv*q[1] + c_inv*q[3] - d_inv*q[2]
-                        c_tf = a_inv*q[2] - b_inv*q[3] + c_inv*q[0] + d_inv*q[1]
-                        d_tf = a_inv*q[3] + b_inv*q[2] - c_inv*q[1] + d_inv*q[0]"""
-
-                        """self.tb.sendTransform(
-                            (translation_vector[0]/1000,
-                             translation_vector[1]/1000,
-                             translation_vector[2]/1000),
-                            (a, b, c, d),
-                            rospy.Time.now(),
-                            "camera_color_optical_frame",
-                            "face")"""
-
-                        """if not hasattr(self, 'trans_x'):
-                            self.alpha = 0.1
-                            self.beta = 0.1
-                            self.trans_x = translation_vector[0]/1000
-                            self.trans_y = translation_vector[1]/1000
-                            self.trans_z = translation_vector[2]/1000
-                            self.vel_x = 0
-                            self.vel_y = 0
-                            self.vel_z = 0
-                            self.last_t = rospy.Time.now()
-                        else:
-                            delta_t = rospy.Time.now() - self.last_t
-                            delta_t = delta_t.to_sec()
-                            # prediction
-                            trans_x_pred = self.trans_x + delta_t*self.vel_x
-                            trans_y_pred = self.trans_y + delta_t*self.vel_y
-                            trans_z_pred = self.trans_z + delta_t*self.vel_z
-                            # residuals
-                            residual_x = translation_vector[0]/1000 - trans_x_pred
-                            residual_y = translation_vector[1]/1000 - trans_y_pred
-                            residual_z = translation_vector[2]/1000 - trans_z_pred
-                            # update
-                            self.trans_x = (1-self.alpha)*trans_x_pred + (self.alpha*translation_vector[0]/1000) 
-                            self.trans_y = (1-self.alpha)*trans_y_pred + (self.alpha*translation_vector[1]/1000)
-                            self.trans_z = (1-self.alpha)*trans_z_pred + (self.alpha*translation_vector[2]/1000)
-                            self.vel_x = self.vel_x + (self.beta*residual_x/delta_t)
-                            self.vel_y = self.vel_y + (self.beta*residual_y/delta_t) 
-                            self.vel_z = self.vel_z + (self.beta*residual_z/delta_t)"""
-
-                    #######################
                     # calculating angle
                         rmat, jac = cv2.Rodrigues(rotation_vector)
                         angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
-                        self.tb.sendTransform((translation_vector[0]/1000,
-                                               translation_vector[1]/1000,
-                                               translation_vector[2]/1000),
+                        self.tb.sendTransform((trans_vec[0]/1000,
+                                               trans_vec[1]/1000,
+                                               trans_vec[2]/1000),
                             tf.transformations.quaternion_from_euler(
                                 angles[0]/180*np.pi, 
                                 angles[1]/180*np.pi, 
                                 angles[2]/180*np.pi),
                             rospy.Time.now(),
-                            "face",
+                            "face"+id,
                             "camera_color_optical_frame")
                         self.tb.sendTransform((0, 0, 0),
                             tf.transformations.quaternion_from_euler(
@@ -497,13 +510,16 @@ class RosFaceDetector:
                             rospy.Time.now(),
                             "gaze"+id,
                             "face"+id)
+
             else:
-                # we 'provisionally' store the face - we'll create a publisher and start publishing only if we see the
+                # we 'provisionally' store the face - we'll create a publisher 
+                # and start publishing only if we see the
                 # face a second time
                 id = self.generate_tmp_face_id()
                 currentFaces[id] = (None, bb, 1, landmarks)
 
-        # iterate over faces not seen anymore, and unregister corresponding publishers
+        # iterate over faces not seen anymore, 
+        # and unregister corresponding publishers
         for id, value in self.detectedFaces.items():
             if id not in currentFaces:
                 pubs, _, nb_frames, _ = value
@@ -595,7 +611,8 @@ if __name__ == "__main__":
     # if false, face IDs will be a random set of 5 characters in [0-9a-f], and
     # face subtopics will be created on the fly.
     preallocate = rospy.get_param("~preallocate_topics", False)
+    face_mesh = rospy.get_param("~face_mesh", True)
 
-    detector = RosFaceDetector(debug, preallocate)
+    detector = RosFaceDetector(debug, preallocate, face_mesh)
 
     rospy.spin()
