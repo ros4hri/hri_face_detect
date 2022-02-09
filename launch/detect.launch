@@ -2,8 +2,12 @@
 
     <arg name="image_topic" default="/camera/color/image_raw"/>
     <arg name="camera_info" default="/camera/color/camera_info"/>
+    <arg name="face_mesh" default="True"/>
+    <arg name="max_num_faces" default="4"/>
 
     <node pkg="hri_face_detect" name="hri_face_detect" type="detect" output="screen">
+        <param name="face_mesh" value="$(arg face_mesh)"/>
+        <param name="max_num_faces" value="$(arg max_num_faces)"/>
         <remap from="image" to="$(arg image_topic)"/>
         <remap from="camera_info" to="$(arg camera_info)"/>
     </node>
