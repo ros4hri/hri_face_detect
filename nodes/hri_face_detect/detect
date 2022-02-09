@@ -68,7 +68,7 @@ def normalized_to_pixel_coordinates(
 
 
 class FaceDetector:
-    def __init__(self, face_mesh=True):
+    def __init__(self, face_mesh=True, max_num_faces=4):
 
         if not face_mesh:
             self.detector = mp_face_detection.FaceDetection(
@@ -76,8 +76,8 @@ class FaceDetector:
             )
         else:
             self.detector = mp_face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=1,
+            static_image_mode=False,
+            max_num_faces=max_num_faces,
             refine_landmarks=True,
             min_detection_confidence=0.5)
 
@@ -218,7 +218,11 @@ class FaceDetector:
 
 
 class RosFaceDetector:
-    def __init__(self, debug=False, preallocate=False, face_mesh=True):
+    def __init__(self, 
+                 debug=False, 
+                 preallocate=False, 
+                 face_mesh=True, 
+                 max_num_faces=4):
 
         self.debug = debug
         self.face_mesh = face_mesh
@@ -229,7 +233,7 @@ class RosFaceDetector:
         self.faces_pub = rospy.Publisher(
             "/humans/faces/tracked", IdsList, queue_size=1)
 
-        self.facedetector = FaceDetector(face_mesh)
+        self.facedetector = FaceDetector(face_mesh, max_num_faces)
         self.image_sub = rospy.Subscriber(
             "image", Image, partial(self.callback, preallocate)
         )
@@ -345,10 +349,8 @@ class RosFaceDetector:
         img_height, img_width, _ = image.shape
 
         if not self.face_mesh:
-            print('no face mesh')
             detections = self.facedetector.detect(image)
         else:
-            print('face_mesh')
             detections = self.facedetector.detect_face_mesh(image)
         bbs = detections[0]
         nose_tips = detections[1]
@@ -490,7 +492,7 @@ class RosFaceDetector:
                             flags=4)
 
                     # calculating angle
-                        rmat, jac = cv2.Rodrigues(rotation_vector)
+                        rmat, jac = cv2.Rodrigues(rot_vec)
                         angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
                         self.tb.sendTransform((trans_vec[0]/1000,
                                                trans_vec[1]/1000,
@@ -612,7 +614,8 @@ if __name__ == "__main__":
     # face subtopics will be created on the fly.
     preallocate = rospy.get_param("~preallocate_topics", False)
     face_mesh = rospy.get_param("~face_mesh", True)
+    max_num_faces = rospy.get_param("~max_num_faces", 4)
 
-    detector = RosFaceDetector(debug, preallocate, face_mesh)
+    detector = RosFaceDetector(debug, preallocate, face_mesh, max_num_faces)
 
     rospy.spin()
