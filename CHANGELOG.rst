@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.2.0 (2022-02-14)
+------------------
 * mediapipe Face-mesh based face detection
   It is now possible to decide between two Mediapipe different
   solutions for face detection: face_detection and face_mesh.
