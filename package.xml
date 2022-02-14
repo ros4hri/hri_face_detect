@@ -16,8 +16,8 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>hri_msgs</exec_depend>
-  <exec_depend>rosconsole</exec_depend>
   <exec_depend>tf</exec_depend>
+  <exec_depend>tf_conversions</exec_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->
