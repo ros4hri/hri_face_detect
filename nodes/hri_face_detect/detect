@@ -54,6 +54,79 @@ points_3D = np.array([
     P3D_LEFT_EAR]
 )
 
+ros4hri_to_mediapipe = [None] * 70
+
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EAR] = 34
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PROFILE_1] = 227
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PROFILE_2] = 137
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PROFILE_3] = 177
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PROFILE_4] = 215
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PROFILE_5] = 135
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PROFILE_6] = 170
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PROFILE_7] = 171
+ros4hri_to_mediapipe[FacialLandmarks.MENTON] = 175
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EAR] = 264
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_PROFILE_1] = 447
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_PROFILE_2] = 366
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_PROFILE_3] = 401
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_PROFILE_4] = 435
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_PROFILE_5] = 364
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_PROFILE_6] = 395
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_PROFILE_7] = 396
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYEBROW_OUTSIDE] = 70
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYEBROW_1] = 63
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYEBROW_2] = 105
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYEBROW_3] = 66
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYEBROW_INSIDE] = 107
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYEBROW_OUTSIDE] = 300
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYEBROW_1] = 293
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYEBROW_2] = 334
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYEBROW_3] = 296
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYEBROW_INSIDE] = 336
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYE_OUTSIDE] = 130
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYE_TOP_1] = 29
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYE_TOP_2] = 28
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYE_INSIDE] = 243
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYE_BOTTOM_1] = 24
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EYE_BOTTOM_2] = 22
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYE_OUTSIDE] = 359
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYE_TOP_1] = 259
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYE_TOP_2] = 258
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYE_INSIDE] = 463
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYE_BOTTOM_1] = 254
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYE_BOTTOM_2] = 252
+ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PUPIL] = 252 # To fix
+ros4hri_to_mediapipe[FacialLandmarks.LEFT_PUPIL] = 252 # To fix
+ros4hri_to_mediapipe[FacialLandmarks.SELLION] = 6
+ros4hri_to_mediapipe[FacialLandmarks.NOSE_1] = 197
+ros4hri_to_mediapipe[FacialLandmarks.NOSE_2] = 4
+ros4hri_to_mediapipe[FacialLandmarks.NOSE] = 1
+ros4hri_to_mediapipe[FacialLandmarks.NOSTRIL_1] = 242
+ros4hri_to_mediapipe[FacialLandmarks.NOSTRIL_2] = 141
+ros4hri_to_mediapipe[FacialLandmarks.NOSTRIL_3] = 94
+ros4hri_to_mediapipe[FacialLandmarks.NOSTRIL_4] = 370
+ros4hri_to_mediapipe[FacialLandmarks.NOSTRIL_5] = 462
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_RIGHT] = 61
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_TOP_1] = 40
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_TOP_2] = 37
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_TOP_3] = 0
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_TOP_4] = 267
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_TOP_5] = 270
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_LEFT] = 291
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_BOTTOM_1] = 321
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_BOTTOM_2] = 314
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_BOTTOM_3] = 17
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_BOTTOM_4] = 84
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_OUTER_BOTTOM_5] = 91
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_INNER_RIGHT] = 62
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_INNER_TOP_1] = 41
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_INNER_TOP_2] = 12
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_INNER_TOP_3] = 271
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_INNER_LEFT] = 292
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_INNER_BOTTOM_1] = 403
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_INNER_BOTTOM_2] = 15
+ros4hri_to_mediapipe[FacialLandmarks.MOUTH_INNER_BOTTOM_3] = 179
+
 
 def normalized_to_pixel_coordinates(
     normalized_x: float,
@@ -80,6 +153,18 @@ class FaceDetector:
             max_num_faces=max_num_faces,
             refine_landmarks=True,
             min_detection_confidence=0.5)
+
+    def make_facial_landmarks_msg(self, detection, img_height, img_width):
+
+        landmarks = FacialLandmarks(
+                [PointOfInterest2D(
+                    int(min(detection.landmark[ros4hri_to_mediapipe[idx]].x*img_width, img_width)), 
+                    int(min(detection.landmark[ros4hri_to_mediapipe[idx]].y*img_height, img_height)), 
+                    1) for idx in range(70)],
+                img_height,
+                img_width)
+
+        return landmarks
 
     def detect(self, img):
         """img is expected as RGB"""
@@ -130,14 +215,12 @@ class FaceDetector:
 
         return results
 
-    def detect_face_mesh(self, img):
+    def detect_face_mesh(self, img, img_height, img_width):
         """img is expected as RGB"""
         img_rows, img_cols, _ = img.shape
 
         detections = self.detector.process(img)
         results = []
-        #results.append(self.get_boundingboxes(
-        #    detections, img_cols, img_rows))
         bbs = []
         nose_tips = []
         right_eyes = []
@@ -145,6 +228,7 @@ class FaceDetector:
         mouth_centers = []
         right_ear_tragions = []
         left_ear_tragions = []
+        facial_landmarks_msg = []
 
         if detections and detections.multi_face_landmarks:
             for detection in detections.multi_face_landmarks:
@@ -181,6 +265,11 @@ class FaceDetector:
                     x_max-x_min, y_max-y_min, img_cols, img_rows
                 )
                 bbs.append((x, y, w, h))
+                facial_landmarks_msg.append(
+                    self.make_facial_landmarks_msg(
+                        detection, 
+                        img_height, 
+                        img_width))
 
         results.append(bbs)
         results.append(nose_tips)
@@ -189,6 +278,7 @@ class FaceDetector:
         results.append(mouth_centers)
         results.append(right_ear_tragions)
         results.append(left_ear_tragions)
+        results.append(facial_landmarks_msg) 
 
         return results
 
@@ -351,7 +441,11 @@ class RosFaceDetector:
         if not self.face_mesh:
             detections = self.facedetector.detect(image)
         else:
-            detections = self.facedetector.detect_face_mesh(image)
+            detections = self.facedetector.detect_face_mesh(
+                image, 
+                img_height, 
+                img_width
+                )
         bbs = detections[0]
         nose_tips = detections[1]
         right_eyes = detections[2]
@@ -359,6 +453,7 @@ class RosFaceDetector:
         mouth_centers = detections[4]
         right_ear_tragions = detections[5]
         left_ear_tragions = detections[6]
+        facial_landmarks_msg = detections[7]
 
         currentFaces = {}
         for i, bb in enumerate(bbs):
@@ -371,7 +466,8 @@ class RosFaceDetector:
                 True,
             )
 
-            landmarks = FacialLandmarks(
+            landmarks = facial_landmarks_msg[i]
+            """landmarks = FacialLandmarks(
                 [PointOfInterest2D(0, 0, 1) for _ in range(70)],
                 img_height,
                 img_width)
@@ -406,7 +502,7 @@ class RosFaceDetector:
             landmarks.landmarks[FacialLandmarks.MOUTH_INNER_TOP_2].x = \
                 mouth_centers[i][0]
             landmarks.landmarks[FacialLandmarks.MOUTH_INNER_TOP_2].y = \
-                mouth_centers[i][1]
+                mouth_centers[i][1]"""
 
             id = self.find_previous_match(bb)
             if id:
