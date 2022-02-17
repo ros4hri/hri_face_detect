@@ -141,7 +141,7 @@ def normalized_to_pixel_coordinates(
 
 
 class FaceDetector:
-    def __init__(self, face_mesh=True, max_num_faces=4):
+    def __init__(self, face_mesh=True, max_num_faces=10):
 
         self.face_mesh = face_mesh
 
