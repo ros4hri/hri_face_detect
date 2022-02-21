@@ -54,7 +54,11 @@ points_3D = np.array([
 )
 
 # ros4hri to mediapipe mapping
-ros4hri_to_mediapipe = [None] * 70
+"""
+ros4hri facial landmarks ref: https://raw.githubusercontent.com/CMU-Perceptual-Computing-Lab/openpose/master/.github/media/keypoints_face.png
+mediapipe face mesh landmarks ref: https://i.stack.imgur.com/5Mohl.jpg 
+"""
+ros4hri_to_mediapipe = [None] * 68
 
 ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EAR] = 34
 ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PROFILE_1] = 227
@@ -95,8 +99,6 @@ ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYE_TOP_2] = 258
 ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYE_INSIDE] = 463
 ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYE_BOTTOM_1] = 254
 ros4hri_to_mediapipe[FacialLandmarks.LEFT_EYE_BOTTOM_2] = 252
-ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PUPIL] = 252  # To fix
-ros4hri_to_mediapipe[FacialLandmarks.LEFT_PUPIL] = 252  # To fix
 ros4hri_to_mediapipe[FacialLandmarks.SELLION] = 6
 ros4hri_to_mediapipe[FacialLandmarks.NOSE_1] = 197
 ros4hri_to_mediapipe[FacialLandmarks.NOSE_2] = 4
@@ -158,15 +160,19 @@ class FaceDetector:
 
     def make_facial_landmarks_msg(self, detection, img_height, img_width):
 
+        # PoI = Points of Interest
+        poi = [PointOfInterest2D(
+                int(detection.landmark[ros4hri_to_mediapipe[idx]].x*img_width),
+                int(detection.landmark[ros4hri_to_mediapipe[idx]].y*img_height),
+                1) for idx in range(68)]
+
+        # the last two facial landmarks represent the pupils
+        # and Mediapipe does not provide pupils estimation.
+        poi.append(PointOfInterest2D(0, 0, 1)) # RIGHT_PUPIL 
+        poi.append(PointOfInterest2D(0, 0, 1)) # LEFT_PUPIL
+
         landmarks = FacialLandmarks(
-            [PointOfInterest2D(
-                int(min(
-                    detection.landmark[ros4hri_to_mediapipe[idx]].x*img_width,
-                    img_width)),
-                int(min(
-                    detection.landmark[ros4hri_to_mediapipe[idx]].y*img_height,
-                    img_height)),
-                1) for idx in range(70)],
+            poi,
             img_height,
             img_width)
 

@@ -34,3 +34,10 @@ Documentation
 -------------
 
 - [ROS4HRI to Mediapipe facial landmarks indexing](doc/mediapipe_face_mesh_2_ros4hri.md)
+
+Visualization
+-------------
+
+[hri_rviz](../hri_rviz) provides Humans, an rviz plugin to easily visualize faces bounding boxes and facial landmarks.
+
+<img src="doc/visualization.png" alt="features visualization" width="370"/>
