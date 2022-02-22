@@ -22,11 +22,12 @@ Holistic model.**
 Parameters
 ----------
 
-- ``image``: default topic for image subscription. Can be remapped
-  using either ``roslaunch`` or ``rosrun`` as ``image:=/your/camera/topic``.   
-- ``camera_info``: default topic for camera parameters subscription. 
+- ``image`` (default = ``/image``): default topic for image subscription. 
   Can be remapped using either ``roslaunch`` or ``rosrun`` as 
-  ``camera_info:=/your/camera_info/topic``.
+  ``image:=/your/camera/topic``.   
+- ``camera_info`` (default = ``/camera_info``): default topic for camera 
+  parameters subscription. Can be remapped using either ``roslaunch`` 
+  or ``rosrun`` as ``camera_info:=/your/camera_info/topic``.
 - ``face_mesh`` (``True``(default) or ``False``): if true, the node applies 
   Mediapipe face mesh estimation on the incoming images. Otherwise, it applies
   Mediapipe face estimation. 
