@@ -59,6 +59,9 @@ ros4hri facial landmarks ref: https://raw.githubusercontent.com/CMU-Perceptual-C
 mediapipe face mesh landmarks ref: https://i.stack.imgur.com/5Mohl.jpg 
 """
 ros4hri_to_mediapipe = [None] * 68
+# The ROS4HRI FacialLandmarks message defines 70 landmarks,
+# however Mediapipe Face Mesh estimator does not provide
+# an estimation for the pupils position ==> 70 - 2 = 68
 
 ros4hri_to_mediapipe[FacialLandmarks.RIGHT_EAR] = 34
 ros4hri_to_mediapipe[FacialLandmarks.RIGHT_PROFILE_1] = 227
