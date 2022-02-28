@@ -620,7 +620,7 @@ class RosFaceDetector:
                                 angles[1]/180*np.pi,
                                 angles[2]/180*np.pi),
                             rospy.Time.now(),
-                            "face"+id,
+                            "face_"+id,
                             "camera_color_optical_frame")
                         self.tb.sendTransform(
                             (0, 0, 0),
@@ -629,8 +629,8 @@ class RosFaceDetector:
                                 0,
                                 -np.pi/2),
                             rospy.Time.now(),
-                            "gaze"+id,
-                            "face"+id)
+                            "gaze_"+id,
+                            "face_"+id)
 
             else:
                 # we 'provisionally' store the face - we'll create a publisher
