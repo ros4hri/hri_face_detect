@@ -2,6 +2,18 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* changing the frames name syntax from face<id> to face_<id> and gaze<id> to
+  gaze_<id> for compliance with ROS4HRI spec
+* [minor] adding default value for camera topics in launch
+* Documentation update
+* Fixed the default number of detectable faces to 10
+* Facial Landmark msg implementation
+  Fully implemented facial landmark msg publishing for both basic
+  face detection and face mesh detection
+* Contributors: lorenzoferrini
+
 1.2.0 (2022-02-14)
 ------------------
 * mediapipe Face-mesh based face detection
