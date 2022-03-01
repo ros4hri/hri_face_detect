@@ -494,6 +494,7 @@ class RosFaceDetector:
 
         image = CvBridge().imgmsg_to_cv2(rgb_msg, desired_encoding="bgr8")
         img_height, img_width, _ = image.shape
+        camera_optical_frame = rgb_msg.header.frame_id
 
         if not self.face_mesh:
             detections = self.facedetector.detect(image, img_width, img_height)
@@ -621,7 +622,7 @@ class RosFaceDetector:
                                 angles[2]/180*np.pi),
                             rospy.Time.now(),
                             "face_"+id,
-                            "camera_color_optical_frame")
+                            camera_optical_frame)
                         self.tb.sendTransform(
                             (0, 0, 0),
                             tf.transformations.quaternion_from_euler(
