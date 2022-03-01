@@ -2,6 +2,11 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Use tf frame from source image
+* Contributors: lorenzoferrini
+
 1.3.0 (2022-03-01)
 ------------------
 * changing the frames name syntax from face<id> to face_<id> and gaze<id> to
