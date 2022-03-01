@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.3.0 (2022-03-01)
+------------------
 * changing the frames name syntax from face<id> to face_<id> and gaze<id> to
   gaze_<id> for compliance with ROS4HRI spec
 * [minor] adding default value for camera topics in launch
