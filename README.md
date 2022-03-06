@@ -15,9 +15,6 @@ It specifically publishes:
 - `humans/faces/<faceID>/landmarks` as `hri_msgs/FacialLandmarks.msg`
 - `humans/faces/tracked` as `hri_msgs/IdsList.msg`
 
-**This node is meant to be used as a baseline for testing purpose. 
-Actual ROS4HRIpipelines should instead use eg the Mediapipe 
-Holistic model.**
 
 Parameters
 ----------
