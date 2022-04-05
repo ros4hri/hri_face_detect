@@ -388,9 +388,6 @@ class RosFaceDetector:
         self.image_info_sub = rospy.Subscriber(
             "camera_info", CameraInfo, self.info_callback)
 
-        self.debug_image_publisher = rospy.Publisher(
-            "/debug_head_pose_image", Image, queue_size=1)
-
         # holds all the individual face publishers
         # only used when pre-allocating face publishers
         if preallocate:
