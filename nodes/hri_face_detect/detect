@@ -13,6 +13,7 @@ import numpy as np
 import uuid
 from functools import partial
 from tf.transformations import quaternion_from_euler
+from hri_face_detect.face_pose_estimation import face_pose_estimation
 
 import mediapipe as mp
 
@@ -597,18 +598,11 @@ class RosFaceDetector:
                                 img_height)
                         ], dtype="double")
 
-                        success, rot_vec, trans_vec = cv2.solvePnP(
-                            points_3D,
-                            points_2D,
-                            self.K,
-                            None,
-                            tvec=np.array([0., 0., 1000.]),
-                            useExtrinsicGuess=True,
-                            flags=4)
+                        trans_vec, angles = face_pose_estimation(points_2D, 
+                                                                self.K)
 
                     # calculating angle
-                        rmat, jac = cv2.Rodrigues(rot_vec)
-                        angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
+                        
                         self.tb.sendTransform(
                             (trans_vec[0]/1000,
                              trans_vec[1]/1000,

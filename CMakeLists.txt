@@ -11,6 +11,8 @@ catkin_package(
     tf_conversions
     hri_msgs)
 
+catkin_python_setup()
+
 catkin_install_python(PROGRAMS nodes/hri_face_detect/detect
                       DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
