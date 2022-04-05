@@ -3,7 +3,7 @@
 import tf
 from hri_msgs.msg import IdsList, FacialLandmarks, PointOfInterest2D
 from sensor_msgs.msg import Image, CameraInfo, RegionOfInterest
-from std_msgs.msg import Empty
+from std_msgs.msg import Empty, Header
 import tf_conversions.posemath as pm
 from cv_bridge import CvBridge
 import rospy
@@ -366,27 +366,24 @@ class FaceDetector:
 
 
 class RosFaceDetector:
-    def __init__(self,
-                 debug=False,
-                 preallocate=False,
-                 face_mesh=True,
-                 max_num_faces=4):
+    def __init__(self, debug=False, preallocate=False, face_mesh=True, max_num_faces=4):
 
+        self.is_shutting_down = False
         self.debug = debug
         self.face_mesh = face_mesh
 
         semaphore_pub = rospy.Publisher(
             "/hri_face_detect/ready", Empty, queue_size=1, latch=True
         )
-        self.faces_pub = rospy.Publisher(
-            "/humans/faces/tracked", IdsList, queue_size=1)
+        self.faces_pub = rospy.Publisher("/humans/faces/tracked", IdsList, queue_size=1)
 
         self.facedetector = FaceDetector(face_mesh, max_num_faces)
         self.image_sub = rospy.Subscriber(
             "image", Image, partial(self.callback, preallocate)
         )
         self.image_info_sub = rospy.Subscriber(
-            "camera_info", CameraInfo, self.info_callback)
+            "camera_info", CameraInfo, self.info_callback
+        )
 
         # holds all the individual face publishers
         # only used when pre-allocating face publishers
@@ -488,6 +485,9 @@ class RosFaceDetector:
             self.K[2][0:3] = self.cameraInfo.K[6:9]
 
     def callback(self, preallocate, rgb_msg):
+
+        if self.is_shutting_down:
+            return
 
         image = CvBridge().imgmsg_to_cv2(rgb_msg, desired_encoding="bgr8")
         img_height, img_width, _ = image.shape
@@ -656,13 +656,15 @@ class RosFaceDetector:
 
         for id, value in self.detectedFaces.items():
             pubs, bb, _, landmarks = value
-            if pubs:
+            if pubs and not self.is_shutting_down:
                 list_ids.append(str(id))
                 pubs[0].publish(bb)
                 pubs[2].publish(landmarks)
 
-        self.publish_cropped_faces(image, self.detectedFaces)
-        self.faces_pub.publish(IdsList(rgb_msg.header, list_ids))
+        if not self.is_shutting_down:
+            self.publish_cropped_faces(image, self.detectedFaces)
+        if not self.is_shutting_down:
+            self.faces_pub.publish(IdsList(rgb_msg.header, list_ids))
 
         if self.debug:
             # Draw the face detection annotations on the image.
@@ -710,14 +712,33 @@ class RosFaceDetector:
     def generate_tmp_face_id(self):
         return str(uuid.uuid4())[:5]  # for a 5 char long ID
 
+    def close(self):
+
+        rospy.loginfo("Stopping face publishing...")
+
+        self.is_shutting_down = True
+
+        for id, value in self.detectedFaces.items():
+            pubs, _, _, _ = value
+            for pub in pubs:
+                pub.unregister()
+
+        h = Header()
+        h.stamp = rospy.Time.now()
+        self.faces_pub.publish(IdsList(h, []))
+
+        rospy.loginfo("Stopped publishing faces.")
+
+        rospy.sleep(
+            0.1
+        )  # ensure the last messages published in detector.close() are effectively sent.
+
 
 if __name__ == "__main__":
     rospy.init_node("hri_face_detect")
 
-    cropped_face_width = rospy.get_param(
-        "/humans/faces/width", cropped_face_width)
-    cropped_face_height = rospy.get_param(
-        "/humans/faces/height", cropped_face_height)
+    cropped_face_width = rospy.get_param("/humans/faces/width", cropped_face_width)
+    cropped_face_height = rospy.get_param("/humans/faces/height", cropped_face_height)
 
     debug = rospy.get_param("~debug", False)
 
@@ -734,5 +755,7 @@ if __name__ == "__main__":
     max_num_faces = rospy.get_param("~max_num_faces", 4)
 
     detector = RosFaceDetector(debug, preallocate, face_mesh, max_num_faces)
+
+    rospy.on_shutdown(detector.close)
 
     rospy.spin()
