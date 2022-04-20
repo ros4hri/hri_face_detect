@@ -10,6 +10,7 @@ from cv_bridge import CvBridge
 import rospy
 import math
 import cv2
+from PIL import Image as PILImage
 import numpy as np
 import uuid
 from tf.transformations import quaternion_from_euler
@@ -171,6 +172,7 @@ class Face:
 
         self.roi_pub = None
         self.cropped_pub = None
+        self.aligned_pub = None
         self.landmarks_pub = None
 
         # True once the publishers are initialised
@@ -196,6 +198,12 @@ class Face:
 
         self.cropped_pub = rospy.Publisher(
             "/humans/faces/%s/cropped" % self.id,
+            Image,
+            queue_size=1,
+        )
+
+        self.aligned_pub = rospy.Publisher(
+            "/humans/faces/%s/aligned" % self.id,
             Image,
             queue_size=1,
         )
@@ -229,6 +237,7 @@ class Face:
             return
 
         self.publish_cropped_face(src_image)
+        self.publish_aligned_face(src_image)
 
     def publish_cropped_face(self, src_image):
 
@@ -257,6 +266,80 @@ class Face:
         output[y_offset : y_offset + scaled_h, x_offset : x_offset + scaled_w] = scaled
 
         self.cropped_pub.publish(CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
+
+    def publish_aligned_face(self, src_image):
+        """Aligns given face in img based on left and right eye coordinates.
+
+        This function is adapted from MIT-licensed DeepFace.
+        Author: serengil
+        Original source: https://github.com/serengil/deepface/blob/f07f278/deepface/detectors/FaceDetector.py#L68
+        """
+
+        # no-one interested in the face image? skip it!
+        if self.aligned_pub.get_num_connections() == 0:
+            return
+
+        img_height, img_width, _ = src_image.shape
+        x,y,w,h = self.bb.x_offset, self.bb.y_offset, self.bb.width, self.bb.height
+
+        # expand the ROI a little to ensure the rotation does not introduce black zones
+        xm1 = max(0, x-w//2)
+        xm2 = min(x+w+w//2, img_width)
+        ym1 = max(0, y-h//2)
+        ym2 = min(y+h+h//2, img_height)
+        preroi = src_image[ym1: ym2, xm1 : xm2] 
+
+        left_eye_x, left_eye_y = self.left_eye
+        right_eye_x, right_eye_y = self.right_eye
+
+        # -----------------------
+        # find rotation direction
+
+        if left_eye_y > right_eye_y:
+            point_3rd = (right_eye_x, left_eye_y)
+            direction = -1  # rotate same direction to clock
+        else:
+            point_3rd = (left_eye_x, right_eye_y)
+            direction = 1  # rotate inverse direction of clock
+
+        # find length of triangle edges
+        a = math.dist(self.left_eye, point_3rd)
+        b = math.dist(self.right_eye, point_3rd)
+        c = math.dist(self.right_eye, self.left_eye)
+
+        # apply cosine rule
+        if b != 0 and c != 0:
+
+            cos_a = (b * b + c * c - a * a) / (2 * b * c)
+            angle = np.arccos(cos_a)  # angle in radian
+            angle = (angle * 180) / math.pi  # radian to degree
+
+            # rotate base image
+
+            if direction == -1:
+                angle = 90 - angle
+
+            img = PILImage.fromarray(preroi)  # convert to a PIL image to rotate it
+            preroi = np.array(img.rotate(-direction * angle, PILImage.BILINEAR))
+
+        roi = preroi[ y - ym1 : y - ym1 + h, x - xm1 : x - xm1 + w ]
+
+        sx = cropped_face_width * 1.0 / self.bb.width
+        sy = cropped_face_height * 1.0 / self.bb.height
+
+        scale = min(sx, sy)
+
+        scaled = cv2.resize(roi, None, fx=scale, fy=scale)
+        scaled_h, scaled_w = scaled.shape[:2]
+
+        output = np.zeros((cropped_face_width, cropped_face_height, 3), np.uint8)
+
+        x_offset = int((cropped_face_width - scaled_w) / 2)
+        y_offset = int((cropped_face_height - scaled_h) / 2)
+
+        output[y_offset : y_offset + scaled_h, x_offset : x_offset + scaled_w] = scaled
+
+        self.aligned_pub.publish(CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
 
     def compute_6d_pose(self, K, image, camera_optical_frame):
 
@@ -349,6 +432,7 @@ class Face:
 
         self.roi_pub.unregister()
         self.cropped_pub.unregister()
+        self.aligned_pub.unregister()
         self.landmarks_pub.unregister()
 
         self.ready = False
@@ -766,7 +850,10 @@ if __name__ == "__main__":
     cropped_face_height = rospy.get_param("/humans/faces/height", cropped_face_height)
 
     if cropped_face_height != cropped_face_width:
-        rospy.logerr("The /humans/faces/width and /humans/faces/height must be equal. Continuing with width = height = %spx" % cropped_face_width)
+        rospy.logerr(
+            "The /humans/faces/width and /humans/faces/height must be equal. Continuing with width = height = %spx"
+            % cropped_face_width
+        )
         cropped_face_height = cropped_face_width
 
     debug = rospy.get_param("~debug", False)
