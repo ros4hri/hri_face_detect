@@ -765,6 +765,10 @@ if __name__ == "__main__":
     cropped_face_width = rospy.get_param("/humans/faces/width", cropped_face_width)
     cropped_face_height = rospy.get_param("/humans/faces/height", cropped_face_height)
 
+    if cropped_face_height != cropped_face_width:
+        rospy.logerr("The /humans/faces/width and /humans/faces/height must be equal. Continuing with width = height = %spx" % cropped_face_width)
+        cropped_face_height = cropped_face_width
+
     debug = rospy.get_param("~debug", False)
 
     face_mesh = rospy.get_param("~face_mesh", True)
