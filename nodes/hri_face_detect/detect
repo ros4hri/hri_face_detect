@@ -391,22 +391,22 @@ class RosFaceDetector:
         if preallocate:
             self.face_pubs = {
                 "%05d"
-                % i: (
-                    rospy.Publisher(
+                % i: {
+                    "roi": rospy.Publisher(
                         "/humans/faces/%05d/roi" % i,
                         RegionOfInterest,
                         queue_size=1
                     ),
-                    rospy.Publisher(
+                    "cropped": rospy.Publisher(
                         "/humans/faces/%05d/cropped" % i,
                         Image,
                         queue_size=1
-                    ),
-                )
+                    )
+                    }
                 for i in range(1, 30)
             }
         else:
-            self.face_pubs = []
+            self.face_pubs = {}
 
         rospy.loginfo(
             "Ready. Waiting for images to be published on %s."
@@ -443,7 +443,7 @@ class RosFaceDetector:
                 continue
 
             # no-one interested in the face image? skip it!
-            if pubs[1].get_num_connections() == 0 and not self.debug:
+            if pubs["cropped"].get_num_connections() == 0 and not self.debug:
                 continue
 
             roi = src_image[
@@ -473,7 +473,7 @@ class RosFaceDetector:
 
                 cv2.imshow("Face %s" % id, output)
 
-            pubs[1].publish(CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
+            pubs["cropped"].publish(CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
 
     def info_callback(self, cameraInfo):
 
@@ -536,23 +536,26 @@ class RosFaceDetector:
                     if preallocate:
                         pubs = self.face_pubs[final_id]
                     else:
-                        pubs = (
-                            rospy.Publisher(
-                                "/humans/faces/%s/roi" % final_id,
-                                RegionOfInterest,
-                                queue_size=1,
+                        pubs = {
+                            "roi":
+                                rospy.Publisher(
+                                    "/humans/faces/%s/roi" % final_id,
+                                    RegionOfInterest,
+                                    queue_size=1,
                             ),
-                            rospy.Publisher(
-                                "/humans/faces/%s/cropped" % final_id,
-                                Image,
-                                queue_size=1,
+                            "cropped":
+                                rospy.Publisher(
+                                    "/humans/faces/%s/cropped" % final_id,
+                                    Image,
+                                    queue_size=1,
                             ),
-                            rospy.Publisher("/humans/faces/%s/landmarks"
-                                            % final_id,
-                                            FacialLandmarks,
-                                            queue_size=1,
-                                            )
-                        )
+                            "landmarks":
+                                rospy.Publisher("/humans/faces/%s/landmarks"
+                                    % final_id,
+                                    FacialLandmarks,
+                                    queue_size=1,
+                            )
+                            }
 
                     currentFaces[final_id] = (
                         pubs, bb, self.detectedFaces[id][2] + 1, landmarks)
@@ -642,7 +645,7 @@ class RosFaceDetector:
                         % (id, nb_frames)
                     )
                     for pub in pubs:
-                        pub.unregister()
+                        pubs[pub].unregister()
 
         self.detectedFaces = currentFaces
 
@@ -652,8 +655,8 @@ class RosFaceDetector:
             pubs, bb, _, landmarks = value
             if pubs and not self.is_shutting_down:
                 list_ids.append(str(id))
-                pubs[0].publish(bb)
-                pubs[2].publish(landmarks)
+                pubs["roi"].publish(bb)
+                pubs["landmarks"].publish(landmarks)
 
         if not self.is_shutting_down:
             self.publish_cropped_faces(image, self.detectedFaces)
@@ -715,7 +718,7 @@ class RosFaceDetector:
         for id, value in self.detectedFaces.items():
             pubs, _, _, _ = value
             for pub in pubs:
-                pub.unregister()
+                pubs[pub].unregister()
 
         h = Header()
         h.stamp = rospy.Time.now()
