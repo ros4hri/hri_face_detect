@@ -3,6 +3,7 @@
 import tf
 from hri_msgs.msg import IdsList, FacialLandmarks, PointOfInterest2D
 from sensor_msgs.msg import Image, CameraInfo, RegionOfInterest
+from geometry_msgs.msg import Transform, TransformStamped, Vector3, Quaternion
 from std_msgs.msg import Empty, Header
 import tf_conversions.posemath as pm
 from cv_bridge import CvBridge
@@ -11,7 +12,6 @@ import math
 import cv2
 import numpy as np
 import uuid
-from functools import partial
 from tf.transformations import quaternion_from_euler
 from hri_face_detect.face_pose_estimation import face_pose_estimation
 
@@ -37,21 +37,16 @@ cropped_face_width = 128
 cropped_face_height = 128
 
 # face key points
-P3D_RIGHT_EYE = (-20., -65.5, -5.)
-P3D_LEFT_EYE = (-20., 65.5, -5.)
-P3D_RIGHT_EAR = (-100., -77.5, -6.)
-P3D_LEFT_EAR = (-100., 77.5, -6.)
-P3D_NOSE = (21.0, 0., -48.0)
-P3D_STOMION = (10.0, 0., -75.0)
+P3D_RIGHT_EYE = (-20.0, -65.5, -5.0)
+P3D_LEFT_EYE = (-20.0, 65.5, -5.0)
+P3D_RIGHT_EAR = (-100.0, -77.5, -6.0)
+P3D_LEFT_EAR = (-100.0, 77.5, -6.0)
+P3D_NOSE = (21.0, 0.0, -48.0)
+P3D_STOMION = (10.0, 0.0, -75.0)
 
 
-points_3D = np.array([
-    P3D_NOSE,
-    P3D_RIGHT_EYE,
-    P3D_LEFT_EYE,
-    P3D_STOMION,
-    P3D_RIGHT_EAR,
-    P3D_LEFT_EAR]
+points_3D = np.array(
+    [P3D_NOSE, P3D_RIGHT_EYE, P3D_LEFT_EYE, P3D_STOMION, P3D_RIGHT_EAR, P3D_LEFT_EAR]
 )
 
 # ros4hri to mediapipe mapping
@@ -146,6 +141,222 @@ def normalized_to_pixel_coordinates(
     return x_px, y_px
 
 
+class Face:
+
+    last_id = 0
+
+    def __init__(self, deterministic_id=False):
+
+        # generate unique ID
+        if deterministic_id:
+            self.id = "%05d" % Face.last_id
+            Face.last_id = (Face.last_id + 1) % 10000
+        else:
+            self.id = str(uuid.uuid4())[:5]  # for a 5 char long ID
+
+        self.nb_frames_visible = 1
+
+        self.bb = None  # a RegionOfInterest instance
+        self.nose_tip = ()
+        self.mouth_center = ()
+        self.right_eye = ()
+        self.left_eye = ()
+        self.right_ear_tragion = ()
+        self.left_ear_tragion = ()
+
+        self.facial_landmarks_msg = None
+
+        self.head_transform = None
+        self.gaze_transform = None
+
+        self.roi_pub = None
+        self.cropped_pub = None
+        self.landmarks_pub = None
+
+        # True once the publishers are initialised
+        self.ready = False
+
+    def initialise_publishers(self):
+        """Initialises all the publishers for this face.
+
+        Not done in the constructor as we typically wait for a few frames
+        before publishing anything (to avoid creating too many spurious faces
+        due to detection noise).
+        """
+
+        # already initialised?
+        if self.ready:
+            return
+
+        self.roi_pub = rospy.Publisher(
+            "/humans/faces/%s/roi" % self.id,
+            RegionOfInterest,
+            queue_size=1,
+        )
+
+        self.cropped_pub = rospy.Publisher(
+            "/humans/faces/%s/cropped" % self.id,
+            Image,
+            queue_size=1,
+        )
+
+        self.landmarks_pub = rospy.Publisher(
+            "/humans/faces/%s/landmarks" % self.id,
+            FacialLandmarks,
+            queue_size=1,
+        )
+
+        rospy.loginfo("New face: %s" % self)
+        self.ready = True
+
+    def publish(self):
+
+        if not self.ready:
+            rospy.logerr(
+                "Trying to publish face information but publishers have not been created yet!"
+            )
+            return
+
+        self.roi_pub.publish(self.bb)
+        self.landmarks_pub.publish(self.facial_landmarks_msg)
+
+    def publish_images(self, src_image):
+
+        if not self.ready:
+            rospy.logerr(
+                "Trying to publish face images but publishers have not been created yet!"
+            )
+            return
+
+        self.publish_cropped_face(src_image)
+
+    def publish_cropped_face(self, src_image):
+
+        # no-one interested in the face image? skip it!
+        if self.cropped_pub.get_num_connections() == 0:
+            return
+
+        roi = src_image[
+            self.bb.y_offset : self.bb.y_offset + self.bb.height,
+            self.bb.x_offset : self.bb.x_offset + self.bb.width,
+        ]
+
+        sx = cropped_face_width * 1.0 / self.bb.width
+        sy = cropped_face_height * 1.0 / self.bb.height
+
+        scale = min(sx, sy)
+
+        scaled = cv2.resize(roi, None, fx=scale, fy=scale)
+        scaled_h, scaled_w = scaled.shape[:2]
+
+        output = np.zeros((cropped_face_width, cropped_face_height, 3), np.uint8)
+
+        x_offset = int((cropped_face_width - scaled_w) / 2)
+        y_offset = int((cropped_face_height - scaled_h) / 2)
+
+        output[y_offset : y_offset + scaled_h, x_offset : x_offset + scaled_w] = scaled
+
+        self.cropped_pub.publish(CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
+
+    def compute_6d_pose(self, K, image, camera_optical_frame):
+
+        img_height, img_width, _ = image.shape
+
+        points_2D = np.array(
+            [
+                normalized_to_pixel_coordinates(
+                    self.nose_tip[0],
+                    self.nose_tip[1],
+                    img_width,
+                    img_height,
+                ),
+                normalized_to_pixel_coordinates(
+                    self.right_eye[0],
+                    self.right_eye[1],
+                    img_width,
+                    img_height,
+                ),
+                normalized_to_pixel_coordinates(
+                    self.left_eye[0],
+                    self.left_eye[1],
+                    img_width,
+                    img_height,
+                ),
+                normalized_to_pixel_coordinates(
+                    self.mouth_center[0],
+                    self.mouth_center[1],
+                    img_width,
+                    img_height,
+                ),
+                normalized_to_pixel_coordinates(
+                    self.right_ear_tragion[0],
+                    self.right_ear_tragion[1],
+                    img_width,
+                    img_height,
+                ),
+                normalized_to_pixel_coordinates(
+                    self.left_ear_tragion[0],
+                    self.left_ear_tragion[1],
+                    img_width,
+                    img_height,
+                ),
+            ],
+            dtype="double",
+        )
+
+        trans_vec, angles = face_pose_estimation(points_2D, K)
+
+        # calculating angle
+        self.head_transform = TransformStamped(
+            Header(0, rospy.Time.now(), camera_optical_frame),
+            "face_" + self.id,
+            Transform(
+                Vector3(
+                    trans_vec[0] / 1000,
+                    trans_vec[1] / 1000,
+                    trans_vec[2] / 1000,
+                ),
+                Quaternion(
+                    *tf.transformations.quaternion_from_euler(
+                        angles[0] / 180 * np.pi,
+                        angles[1] / 180 * np.pi,
+                        angles[2] / 180 * np.pi,
+                    )
+                ),
+            ),
+        )
+
+        self.gaze_transform = TransformStamped(
+            Header(0, rospy.Time.now(), "face_" + self.id),
+            "gaze_" + self.id,
+            Transform(
+                Vector3(0, 0, 0),
+                Quaternion(
+                    *tf.transformations.quaternion_from_euler(-np.pi / 2, 0, -np.pi / 2)
+                ),
+            ),
+        )
+
+    def delete(self):
+
+        if not self.ready:
+            return
+
+        rospy.loginfo(
+            "Face [%s] lost. It remained visible for %s frames"
+            % (self, self.nb_frames_visible)
+        )
+
+        self.roi_pub.unregister()
+        self.cropped_pub.unregister()
+        self.landmarks_pub.unregister()
+
+        self.ready = False
+
+    def __repr__(self):
+        return self.id
+
+
 class FaceDetector:
     def __init__(self, face_mesh=True, max_num_faces=10):
 
@@ -160,25 +371,27 @@ class FaceDetector:
                 static_image_mode=False,
                 max_num_faces=max_num_faces,
                 refine_landmarks=True,
-                min_detection_confidence=0.5)
+                min_detection_confidence=0.5,
+            )
 
     def make_facial_landmarks_msg(self, detection, img_height, img_width):
 
         # PoI = Points of Interest
-        poi = [PointOfInterest2D(
-                int(detection.landmark[ros4hri_to_mediapipe[idx]].x*img_width),
-                int(detection.landmark[ros4hri_to_mediapipe[idx]].y*img_height),
-                1) for idx in range(68)]
+        poi = [
+            PointOfInterest2D(
+                int(detection.landmark[ros4hri_to_mediapipe[idx]].x * img_width),
+                int(detection.landmark[ros4hri_to_mediapipe[idx]].y * img_height),
+                1,
+            )
+            for idx in range(68)
+        ]
 
         # the last two facial landmarks represent the pupils
         # and Mediapipe does not provide pupils estimation.
-        poi.append(PointOfInterest2D(0, 0, 1)) # RIGHT_PUPIL 
-        poi.append(PointOfInterest2D(0, 0, 1)) # LEFT_PUPIL
+        poi.append(PointOfInterest2D(0, 0, 1))  # RIGHT_PUPIL
+        poi.append(PointOfInterest2D(0, 0, 1))  # LEFT_PUPIL
 
-        landmarks = FacialLandmarks(
-            poi,
-            img_height,
-            img_width)
+        landmarks = FacialLandmarks(poi, img_height, img_width)
 
         return landmarks
 
@@ -187,90 +400,92 @@ class FaceDetector:
         img_rows, img_cols, _ = img.shape
 
         detections = self.detector.process(img).detections
+        if not detections:
+            return []
+
         results = []
-        results.append(self.get_boundingboxes(
-            detections, img_cols, img_rows))
 
-        nose_tips = []
-        right_eyes = []
-        left_eyes = []
-        mouth_centers = []
-        right_ear_tragions = []
-        left_ear_tragions = []
-        facial_landmarks_msg = []
+        for detection in detections:
 
-        if detections:
-            for detection in detections:
+            face = {}
 
-                landmarks = FacialLandmarks(
-                    [PointOfInterest2D(0, 0, 1) for _ in range(70)],
-                    img_height,
-                    img_width)
-                nose_tip = mp_face_detection.get_key_point(
-                    detection,
-                    mp_face_detection.FaceKeyPoint.NOSE_TIP)
-                nose_tips.append([nose_tip.x, nose_tip.y])
-                landmarks.landmarks[FacialLandmarks.NOSE] = \
-                    PointOfInterest2D(
-                        int(min(nose_tip.x*img_width, img_width)),
-                        int(min(nose_tip.y*img_height, img_height)),
-                        1)
-                right_eye = mp_face_detection.get_key_point(
-                    detection,
-                    mp_face_detection.FaceKeyPoint.RIGHT_EYE)
-                right_eyes.append([right_eye.x, right_eye.y])
-                landmarks.landmarks[FacialLandmarks.RIGHT_PUPIL] = \
-                    PointOfInterest2D(
-                        int(min(right_eye.x*img_width, img_width)),
-                        int(min(right_eye.y*img_height, img_height)),
-                        1)
-                left_eye = mp_face_detection.get_key_point(
-                    detection,
-                    mp_face_detection.FaceKeyPoint.LEFT_EYE)
-                left_eyes.append([left_eye.x, left_eye.y])
-                landmarks.landmarks[FacialLandmarks.LEFT_PUPIL] = \
-                    PointOfInterest2D(
-                        int(min(left_eye.x*img_width, img_width)),
-                        int(min(left_eye.y*img_height, img_height)),
-                        1)
-                mouth_center = mp_face_detection.get_key_point(
-                    detection,
-                    mp_face_detection.FaceKeyPoint.MOUTH_CENTER)
-                mouth_centers.append([mouth_center.x, mouth_center.y])
-                landmarks.landmarks[FacialLandmarks.MOUTH_INNER_TOP_2] = \
-                    PointOfInterest2D(
-                        int(min(mouth_center.x*img_width, img_width)),
-                        int(min(mouth_center.y*img_height, img_height)),
-                        1)
-                right_ear_tragion = mp_face_detection.get_key_point(
-                    detection,
-                    mp_face_detection.FaceKeyPoint.RIGHT_EAR_TRAGION)
-                right_ear_tragions.append(
-                    [right_ear_tragion.x, right_ear_tragion.y])
-                landmarks.landmarks[FacialLandmarks.RIGHT_EAR] = \
-                    PointOfInterest2D(
-                        int(min(right_ear_tragion.x*img_width, img_width)),
-                        int(min(right_ear_tragion.y*img_height, img_height)),
-                        1)
-                left_ear_tragion = mp_face_detection.get_key_point(
-                    detection,
-                    mp_face_detection.FaceKeyPoint.LEFT_EAR_TRAGION)
-                left_ear_tragions.append(
-                    [left_ear_tragion.x, left_ear_tragion.y])
-                landmarks.landmarks[FacialLandmarks.LEFT_EAR] = \
-                    PointOfInterest2D(
-                        int(min(left_ear_tragion.x*img_width, img_width)),
-                        int(min(left_ear_tragion.y*img_height, img_height)),
-                        1)
-                facial_landmarks_msg.append(landmarks)
+            face["bb"] = self.get_boundingbox(detection, img_cols, img_rows)
 
-        results.append(nose_tips)
-        results.append(right_eyes)
-        results.append(left_eyes)
-        results.append(mouth_centers)
-        results.append(right_ear_tragions)
-        results.append(left_ear_tragions)
-        results.append(facial_landmarks_msg)
+            landmarks = FacialLandmarks(
+                [PointOfInterest2D(0, 0, 1) for _ in range(70)],
+                img_height,
+                img_width,
+            )
+
+            nose_tip = mp_face_detection.get_key_point(
+                detection, mp_face_detection.FaceKeyPoint.NOSE_TIP
+            )
+            face["nose_tip"] = (nose_tip.x, nose_tip.y)
+
+            landmarks.landmarks[FacialLandmarks.NOSE] = PointOfInterest2D(
+                int(min(nose_tip.x * img_width, img_width)),
+                int(min(nose_tip.y * img_height, img_height)),
+                1,
+            )
+
+            right_eye = mp_face_detection.get_key_point(
+                detection, mp_face_detection.FaceKeyPoint.RIGHT_EYE
+            )
+            face["right_eye"] = (right_eye.x, right_eye.y)
+
+            landmarks.landmarks[FacialLandmarks.RIGHT_PUPIL] = PointOfInterest2D(
+                int(min(right_eye.x * img_width, img_width)),
+                int(min(right_eye.y * img_height, img_height)),
+                1,
+            )
+
+            left_eye = mp_face_detection.get_key_point(
+                detection, mp_face_detection.FaceKeyPoint.LEFT_EYE
+            )
+            face["left_eye"] = (left_eye.x, left_eye.y)
+
+            landmarks.landmarks[FacialLandmarks.LEFT_PUPIL] = PointOfInterest2D(
+                int(min(left_eye.x * img_width, img_width)),
+                int(min(left_eye.y * img_height, img_height)),
+                1,
+            )
+
+            mouth_center = mp_face_detection.get_key_point(
+                detection, mp_face_detection.FaceKeyPoint.MOUTH_CENTER
+            )
+            face["mouth_center"] = (mouth_center.x, mouth_center.y)
+
+            landmarks.landmarks[FacialLandmarks.MOUTH_INNER_TOP_2] = PointOfInterest2D(
+                int(min(mouth_center.x * img_width, img_width)),
+                int(min(mouth_center.y * img_height, img_height)),
+                1,
+            )
+
+            right_ear_tragion = mp_face_detection.get_key_point(
+                detection, mp_face_detection.FaceKeyPoint.RIGHT_EAR_TRAGION
+            )
+            face["right_ear_tragion"] = (right_ear_tragion.x, right_ear_tragion.y)
+
+            landmarks.landmarks[FacialLandmarks.RIGHT_EAR] = PointOfInterest2D(
+                int(min(right_ear_tragion.x * img_width, img_width)),
+                int(min(right_ear_tragion.y * img_height, img_height)),
+                1,
+            )
+
+            left_ear_tragion = mp_face_detection.get_key_point(
+                detection, mp_face_detection.FaceKeyPoint.LEFT_EAR_TRAGION
+            )
+            face["left_ear_tragion"] = (left_ear_tragion.x, left_ear_tragion.y)
+
+            landmarks.landmarks[FacialLandmarks.LEFT_EAR] = PointOfInterest2D(
+                int(min(left_ear_tragion.x * img_width, img_width)),
+                int(min(left_ear_tragion.y * img_height, img_height)),
+                1,
+            )
+
+            face["facial_landmarks_msg"] = landmarks
+
+            results.append(face)
 
         return results
 
@@ -279,95 +494,76 @@ class FaceDetector:
         img_rows, img_cols, _ = img.shape
 
         detections = self.detector.process(img)
+        if not detections or not detections.multi_face_landmarks:
+            return []
+
         results = []
-        bbs = []
-        nose_tips = []
-        right_eyes = []
-        left_eyes = []
-        mouth_centers = []
-        right_ear_tragions = []
-        left_ear_tragions = []
-        facial_landmarks_msg = []
 
-        if detections and detections.multi_face_landmarks:
-            for detection in detections.multi_face_landmarks:
-                x_min = 1
-                y_min = 1
-                x_max = 0
-                y_max = 0
-                for idx, landmark in enumerate(detection.landmark):
-                    if landmark.x < x_min:
-                        x_min = landmark.x
-                    if landmark.y < y_min:
-                        y_min = landmark.y
-                    if landmark.x > x_max:
-                        x_max = landmark.x
-                    if landmark.y > y_max:
-                        y_max = landmark.y
-                    if idx == 1:
-                        nose_tips.append([landmark.x, landmark.y])
-                    if idx == 13:
-                        mouth_centers.append([landmark.x, landmark.y])
-                    if idx == 159:
-                        right_eyes.append([landmark.x, landmark.y])
-                    if idx == 234:
-                        right_ear_tragions.append([landmark.x, landmark.y])
-                    if idx == 386:
-                        left_eyes.append([landmark.x, landmark.y])
-                    if idx == 454:
-                        left_ear_tragions.append([landmark.x, landmark.y])
+        for detection in detections.multi_face_landmarks:
 
-                x, y = normalized_to_pixel_coordinates(
-                    x_min, y_min, img_cols, img_rows
-                )
-                w, h = normalized_to_pixel_coordinates(
-                    x_max-x_min, y_max-y_min, img_cols, img_rows
-                )
-                bbs.append((x, y, w, h))
-                facial_landmarks_msg.append(
-                    self.make_facial_landmarks_msg(
-                        detection,
-                        img_height,
-                        img_width))
+            face = {}
 
-        results.append(bbs)
-        results.append(nose_tips)
-        results.append(right_eyes)
-        results.append(left_eyes)
-        results.append(mouth_centers)
-        results.append(right_ear_tragions)
-        results.append(left_ear_tragions)
-        results.append(facial_landmarks_msg)
+            x_min = 1
+            y_min = 1
+            x_max = 0
+            y_max = 0
+
+            for idx, landmark in enumerate(detection.landmark):
+                if landmark.x < x_min:
+                    x_min = landmark.x
+                if landmark.y < y_min:
+                    y_min = landmark.y
+                if landmark.x > x_max:
+                    x_max = landmark.x
+                if landmark.y > y_max:
+                    y_max = landmark.y
+                if idx == 1:
+                    face["nose_tip"] = (landmark.x, landmark.y)
+                if idx == 13:
+                    face["mouth_center"] = (landmark.x, landmark.y)
+                if idx == 159:
+                    face["right_eye"] = (landmark.x, landmark.y)
+                if idx == 234:
+                    face["right_ear_tragion"] = (landmark.x, landmark.y)
+                if idx == 386:
+                    face["left_eye"] = (landmark.x, landmark.y)
+                if idx == 454:
+                    face["left_ear_tragion"] = (landmark.x, landmark.y)
+
+            x, y = normalized_to_pixel_coordinates(x_min, y_min, img_cols, img_rows)
+            w, h = normalized_to_pixel_coordinates(
+                x_max - x_min, y_max - y_min, img_cols, img_rows
+            )
+
+            face["bb"] = (x, y, w, h)
+
+            face["facial_landmarks_msg"] = self.make_facial_landmarks_msg(
+                detection, img_height, img_width
+            )
+
+            results.append(face)
 
         return results
 
-    def get_boundingboxes(self, detections, image_cols, image_rows):
+    def get_boundingbox(self, detection, image_cols, image_rows):
         """
         Based on https://github.com/google/mediapipe/blob/master/mediapipe/python/solutions/drawing_utils.py
         """
-        res = []
-        if not detections:
-            return res
 
-        for detection in detections:
-            bb = detection.location_data.relative_bounding_box
-            x, y = normalized_to_pixel_coordinates(
-                bb.xmin, bb.ymin, image_cols, image_rows
-            )
-            w, h = normalized_to_pixel_coordinates(
-                bb.width, bb.height, image_cols, image_rows
-            )
+        bb = detection.location_data.relative_bounding_box
+        x, y = normalized_to_pixel_coordinates(bb.xmin, bb.ymin, image_cols, image_rows)
+        w, h = normalized_to_pixel_coordinates(
+            bb.width, bb.height, image_cols, image_rows
+        )
 
-            res.append((x, y, w, h))
-
-        return res
+        return (x, y, w, h)
 
     def __str__(self):
         return "Google mediapipe face detector"
 
 
 class RosFaceDetector:
-    def __init__(self, debug=False, preallocate=False, face_mesh=True, max_num_faces=4):
+    def __init__(self, debug=False, face_mesh=True, max_num_faces=4):
 
         self.is_shutting_down = False
         self.debug = debug
@@ -379,105 +575,44 @@ class RosFaceDetector:
         self.faces_pub = rospy.Publisher("/humans/faces/tracked", IdsList, queue_size=1)
 
         self.facedetector = FaceDetector(face_mesh, max_num_faces)
-        self.image_sub = rospy.Subscriber(
-            "image", Image, partial(self.callback, preallocate)
-        )
+        self.image_sub = rospy.Subscriber("image", Image, self.callback)
         self.image_info_sub = rospy.Subscriber(
             "camera_info", CameraInfo, self.info_callback
         )
 
-        # holds all the individual face publishers
-        # only used when pre-allocating face publishers
-        if preallocate:
-            self.face_pubs = {
-                "%05d"
-                % i: {
-                    "roi": rospy.Publisher(
-                        "/humans/faces/%05d/roi" % i,
-                        RegionOfInterest,
-                        queue_size=1
-                    ),
-                    "cropped": rospy.Publisher(
-                        "/humans/faces/%05d/cropped" % i,
-                        Image,
-                        queue_size=1
-                    )
-                    }
-                for i in range(1, 30)
-            }
-        else:
-            self.face_pubs = {}
-
         rospy.loginfo(
-            "Ready. Waiting for images to be published on %s."
-            % self.image_sub.name
+            "Ready. Waiting for images to be published on %s." % self.image_sub.name
         )
         semaphore_pub.publish(Empty())
 
         # last-used face id
         self.last_id = 1
 
-        # ID -> (publisher, RoI, nb_frames_visible)
-        self.detectedFaces = {}
+        # list (map ID -> Face) of Face instances, corresponding to the currently tracked faces
+        self.knownFaces = {}
 
         self.tb = tf.TransformBroadcaster()
 
+    def distance_rois(self, bb1, bb2):
+        x1, y1 = bb1.x_offset + bb1.width / 2, bb1.y_offset + bb1.height / 2
+        x2, y2 = bb2.x_offset + bb2.width / 2, bb2.y_offset + bb2.height / 2
+
+        return (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2)
+
     def find_previous_match(self, bb):
-        for id, value in self.detectedFaces.items():
-            _, prev_bb, _, _ = value
+        for _, face in self.knownFaces.items():
+            prev_bb = face.bb
             if (
-                self.distance_rois(
-                    prev_bb, bb) < MAX_ROIS_DISTANCE * MAX_ROIS_DISTANCE
-                and 1/MAX_SCALING_ROIS < prev_bb.width/bb.width < MAX_SCALING_ROIS
-                and 1/MAX_SCALING_ROIS < prev_bb.height/bb.height < MAX_SCALING_ROIS
+                self.distance_rois(prev_bb, bb) < MAX_ROIS_DISTANCE * MAX_ROIS_DISTANCE
+                and 1 / MAX_SCALING_ROIS < prev_bb.width / bb.width < MAX_SCALING_ROIS
+                and 1 / MAX_SCALING_ROIS < prev_bb.height / bb.height < MAX_SCALING_ROIS
             ):
-                return id
+                return face
         return None
-
-    def publish_cropped_faces(self, src_image, bbs_and_publishers):
-
-        for id, kv in bbs_and_publishers.items():
-            pubs, bb, _, _ = kv
-
-            if not pubs:
-                continue
-
-            # no-one interested in the face image? skip it!
-            if pubs["cropped"].get_num_connections() == 0 and not self.debug:
-                continue
-
-            roi = src_image[
-                bb.y_offset: bb.y_offset + bb.height,
-                bb.x_offset: bb.x_offset + bb.width,
-            ]
-
-            sx = cropped_face_width * 1.0 / bb.width
-            sy = cropped_face_height * 1.0 / bb.height
-
-            scale = min(sx, sy)
-
-            scaled = cv2.resize(roi, None, fx=scale, fy=scale)
-            scaled_h, scaled_w = scaled.shape[:2]
-
-            output = np.zeros(
-                (cropped_face_width, cropped_face_height, 3), np.uint8)
-
-            x_offset = int((cropped_face_width - scaled_w) / 2)
-            y_offset = int((cropped_face_height - scaled_h) / 2)
-
-            output[
-                y_offset: y_offset + scaled_h, x_offset: x_offset + scaled_w
-            ] = scaled
-
-            if self.debug:
-
-                cv2.imshow("Face %s" % id, output)
-
-            pubs["cropped"].publish(CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
 
     def info_callback(self, cameraInfo):
 
-        if not hasattr(self, 'cameraInfo'):
+        if not hasattr(self, "cameraInfo"):
             self.cameraInfo = cameraInfo
 
             self.K = np.zeros((3, 3), np.float32)
@@ -485,10 +620,14 @@ class RosFaceDetector:
             self.K[1][0:3] = self.cameraInfo.K[3:6]
             self.K[2][0:3] = self.cameraInfo.K[6:9]
 
-    def callback(self, preallocate, rgb_msg):
+    def callback(self, rgb_msg):
 
         if self.is_shutting_down:
             return
+
+        # copy the list of face ID before iterating over detection, so that we
+        # can delete non-existant faces at the end.
+        knownIds = list(self.knownFaces.keys())
 
         image = CvBridge().imgmsg_to_cv2(rgb_msg, desired_encoding="bgr8")
         img_height, img_width, _ = image.shape
@@ -498,22 +637,13 @@ class RosFaceDetector:
             detections = self.facedetector.detect(image, img_width, img_height)
         else:
             detections = self.facedetector.detect_face_mesh(
-                image,
-                img_height,
-                img_width
+                image, img_height, img_width
             )
-        bbs = detections[0]
-        nose_tips = detections[1]
-        right_eyes = detections[2]
-        left_eyes = detections[3]
-        mouth_centers = detections[4]
-        right_ear_tragions = detections[5]
-        left_ear_tragions = detections[6]
-        facial_landmarks_msg = detections[7]
 
-        currentFaces = {}
-        for i, bb in enumerate(bbs):
-            x, y, w, h = bb
+        currentIds = []
+
+        for detection in detections:
+            x, y, w, h = detection["bb"]
             bb = RegionOfInterest(
                 max(0, x),
                 max(0, y),
@@ -522,167 +652,85 @@ class RosFaceDetector:
                 True,
             )
 
-            landmarks = facial_landmarks_msg[i]
+            # have we seen this face before? -> check based on whether or not
+            # bounding boxes overlaps
+            face = self.find_previous_match(bb)
 
-            id = self.find_previous_match(bb)
-            if id:
-                # we re-detect a face
-                # if it is a 2nd frame, we create a publisher for it.
-                if not self.detectedFaces[id][0]:
-                    want_deterministic_id = preallocate
-                    final_id = self.generate_face_id(want_deterministic_id)
-                    rospy.loginfo("New face [face_%s]" % final_id)
+            if face:
+                # we re-detect a face!
 
-                    if preallocate:
-                        pubs = self.face_pubs[final_id]
-                    else:
-                        pubs = {
-                            "roi":
-                                rospy.Publisher(
-                                    "/humans/faces/%s/roi" % final_id,
-                                    RegionOfInterest,
-                                    queue_size=1,
-                            ),
-                            "cropped":
-                                rospy.Publisher(
-                                    "/humans/faces/%s/cropped" % final_id,
-                                    Image,
-                                    queue_size=1,
-                            ),
-                            "landmarks":
-                                rospy.Publisher("/humans/faces/%s/landmarks"
-                                    % final_id,
-                                    FacialLandmarks,
-                                    queue_size=1,
-                            )
-                            }
+                currentIds.append(face.id)
+                face.nb_frames_visible += 1
 
-                    currentFaces[final_id] = (
-                        pubs, bb, self.detectedFaces[id][2] + 1, landmarks)
-                else:
-                    currentFaces[id] = (
-                        self.detectedFaces[id][0],
-                        bb,
-                        self.detectedFaces[id][2] + 1,
-                        landmarks
-                    )
-                    ### Face pose estimation ###
-                    if hasattr(self, 'K'):
-                        points_2D = np.array([
-                            normalized_to_pixel_coordinates(
-                                nose_tips[i][0],
-                                nose_tips[i][1],
-                                img_width,
-                                img_height),
-                            normalized_to_pixel_coordinates(
-                                right_eyes[i][0],
-                                right_eyes[i][1],
-                                img_width,
-                                img_height),
-                            normalized_to_pixel_coordinates(
-                                left_eyes[i][0],
-                                left_eyes[i][1],
-                                img_width,
-                                img_height),
-                            normalized_to_pixel_coordinates(
-                                mouth_centers[i][0],
-                                mouth_centers[i][1],
-                                img_width,
-                                img_height),
-                            normalized_to_pixel_coordinates(
-                                right_ear_tragions[i][0],
-                                right_ear_tragions[i][1],
-                                img_width,
-                                img_height),
-                            normalized_to_pixel_coordinates(
-                                left_ear_tragions[i][0],
-                                left_ear_tragions[i][1],
-                                img_width,
-                                img_height)
-                        ], dtype="double")
+                # if it is a 2nd frame, we create all the required publishers.
+                if face.nb_frames_visible == 2:
+                    face.initialise_publishers()
 
-                        trans_vec, angles = face_pose_estimation(points_2D, 
-                                                                self.K)
-
-                    # calculating angle
-                        
-                        self.tb.sendTransform(
-                            (trans_vec[0]/1000,
-                             trans_vec[1]/1000,
-                             trans_vec[2]/1000),
-                            tf.transformations.quaternion_from_euler(
-                                angles[0]/180*np.pi,
-                                angles[1]/180*np.pi,
-                                angles[2]/180*np.pi),
-                            rospy.Time.now(),
-                            "face_"+id,
-                            camera_optical_frame)
-                        self.tb.sendTransform(
-                            (0, 0, 0),
-                            tf.transformations.quaternion_from_euler(
-                                -np.pi/2,
-                                0,
-                                -np.pi/2),
-                            rospy.Time.now(),
-                            "gaze_"+id,
-                            "face_"+id)
+                # update the face with its current position and landmarks
+                face.bb = bb
+                face.nose_tip = detection["nose_tip"]
+                face.mouth_center = detection["mouth_center"]
+                face.right_eye = detection["right_eye"]
+                face.left_eye = detection["left_eye"]
+                face.right_ear_tragion = detection["right_ear_tragion"]
+                face.left_ear_tragion = detection["left_ear_tragion"]
+                face.facial_landmarks_msg = detection["facial_landmarks_msg"]
 
             else:
-                # we 'provisionally' store the face - we'll create a publisher
-                # and start publishing only if we see the
-                # face a second time
-                id = self.generate_tmp_face_id()
-                currentFaces[id] = (None, bb, 1, landmarks)
+                face = Face()
+                face.bb = bb
+                currentIds.append(face.id)
+                self.knownFaces[face.id] = face
 
         # iterate over faces not seen anymore,
         # and unregister corresponding publishers
-        for id, value in self.detectedFaces.items():
-            if id not in currentFaces:
-                pubs, _, nb_frames, _ = value
-                if pubs:
-                    rospy.loginfo(
-                        "Face [face_%s] lost. It remained visible for %s frames"
-                        % (id, nb_frames)
-                    )
-                    for pub in pubs:
-                        pubs[pub].unregister()
+        for id in knownIds:
+            if id not in currentIds:
+                self.knownFaces[id].delete()
+                del self.knownFaces[id]
 
-        self.detectedFaces = currentFaces
+        for _, face in self.knownFaces.items():
+            if face.ready:
+                if not self.is_shutting_down:
+                    face.publish()
+                if not self.is_shutting_down:
+                    face.publish_images(image)
 
-        list_ids = []
+                if not self.is_shutting_down:
+                    if hasattr(self, "K"):
+                        face.compute_6d_pose(self.K, image, camera_optical_frame)
 
-        for id, value in self.detectedFaces.items():
-            pubs, bb, _, landmarks = value
-            if pubs and not self.is_shutting_down:
-                list_ids.append(str(id))
-                pubs["roi"].publish(bb)
-                pubs["landmarks"].publish(landmarks)
+                        self.tb.sendTransformMessage(face.head_transform)
+                        self.tb.sendTransformMessage(face.gaze_transform)
 
-        if not self.is_shutting_down:
-            self.publish_cropped_faces(image, self.detectedFaces)
-        if not self.is_shutting_down:
-            self.faces_pub.publish(IdsList(rgb_msg.header, list_ids))
+        self.faces_pub.publish(
+            IdsList(
+                rgb_msg.header,
+                [face.id for face in self.knownFaces.values() if face.ready],
+            )
+        )
 
         if self.debug:
             # Draw the face detection annotations on the image.
             image.flags.writeable = True
-            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-            rospy.loginfo("%s faces detected" % len(self.detectedFaces))
-            for id, value in self.detectedFaces.items():
-                pub, bb, nb_frames = value
-                if not pub:
+            rospy.loginfo("%s faces detected" % len(self.knownFaces))
+            for _, face in self.knownFaces.items():
+                if not face.ready:
                     continue
                 cv2.rectangle(
                     image,
-                    (bb.x_offset, bb.y_offset),
-                    (bb.x_offset + bb.width, bb.y_offset + bb.height),
+                    (face.bb.x_offset, face.bb.y_offset),
+                    (
+                        face.bb.x_offset + face.bb.width,
+                        face.bb.y_offset + face.bb.height,
+                    ),
                     (255, 255, 0),
                     2,
                 )
                 cv2.putText(
                     image,
-                    id,
-                    (bb.x_offset, bb.y_offset),
+                    face.id,
+                    (face.bb.x_offset, face.bb.y_offset),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     1,
                     (255, 0, 0),
@@ -691,34 +739,14 @@ class RosFaceDetector:
             cv2.imshow("MediaPipe Face Detection", image)
             cv2.waitKey(5)
 
-    def distance_rois(self, bb1, bb2):
-        x1, y1 = bb1.x_offset + bb1.width / 2, bb1.y_offset + bb1.height / 2
-        x2, y2 = bb2.x_offset + bb2.width / 2, bb2.y_offset + bb2.height / 2
-
-        return (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2)
-
-    def generate_face_id(self, deterministic=False):
-        if deterministic:
-            id_str = "%05d" % self.last_id
-            self.last_id = (self.last_id + 1) % 10000
-            return id_str
-
-        else:
-            return str(uuid.uuid4())[:5]  # for a 5 char long ID
-
-    def generate_tmp_face_id(self):
-        return str(uuid.uuid4())[:5]  # for a 5 char long ID
-
     def close(self):
 
         rospy.loginfo("Stopping face publishing...")
 
         self.is_shutting_down = True
 
-        for id, value in self.detectedFaces.items():
-            pubs, _, _, _ = value
-            for pub in pubs:
-                pubs[pub].unregister()
+        for _, face in self.knownFaces.items():
+            face.delete()
 
         h = Header()
         h.stamp = rospy.Time.now()
@@ -728,7 +756,7 @@ class RosFaceDetector:
 
         rospy.sleep(
             0.1
-        )  # ensure the last messages published in detector.close() are effectively sent.
+        )  # ensure the last messages published in this method (detector.close) are effectively sent.
 
 
 if __name__ == "__main__":
@@ -739,19 +767,10 @@ if __name__ == "__main__":
 
     debug = rospy.get_param("~debug", False)
 
-    # if set to true, face IDs will be generated as a sequence of integers,
-    # starting at 00001, and ROS publishers for each face are created *before*
-    # the faces are detected. This makes it possible for client to subscribe
-    # early to these topics, to avoid missing any message. This is useful to eg
-    # annotate datasets.
-
-    # if false, face IDs will be a random set of 5 characters in [0-9a-f], and
-    # face subtopics will be created on the fly.
-    preallocate = rospy.get_param("~preallocate_topics", False)
     face_mesh = rospy.get_param("~face_mesh", True)
     max_num_faces = rospy.get_param("~max_num_faces", 4)
 
-    detector = RosFaceDetector(debug, preallocate, face_mesh, max_num_faces)
+    detector = RosFaceDetector(debug, face_mesh, max_num_faces)
 
     rospy.on_shutdown(detector.close)
 
