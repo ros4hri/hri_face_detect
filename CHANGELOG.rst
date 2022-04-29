@@ -2,6 +2,22 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* large refactor of the code
+  In particular:
+  - added a Face class to maintain the state of a detected face
+  - reworked how detection results are returned, to simplify code
+* publish aligned versions of the face under /humans/faces/<id>/aligned
+  (aligned faces are rotated such as the eyes are always horizontal)
+* warn about faces height and width having to be equal
+* store various face publishers as dict to ease future extension
+* Delegated face estimation process to function.
+* publish empty list of faces upon closing to clean up state
+* update launch file to match hri_fullbody arguments names
+* [doc] node suitable for production
+* Contributors: Séverin Lemaignan, lorenzoferrini
+
 1.3.1 (2022-03-01)
 ------------------
 * Use tf frame from source image
