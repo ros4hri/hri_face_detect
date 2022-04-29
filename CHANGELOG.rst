@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.4.0 (2022-04-29)
+------------------
 * large refactor of the code
   In particular:
   - added a Face class to maintain the state of a detected face
