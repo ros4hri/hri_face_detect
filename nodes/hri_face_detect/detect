@@ -280,14 +280,14 @@ class Face:
             return
 
         img_height, img_width, _ = src_image.shape
-        x,y,w,h = self.bb.x_offset, self.bb.y_offset, self.bb.width, self.bb.height
+        x, y, w, h = self.bb.x_offset, self.bb.y_offset, self.bb.width, self.bb.height
 
         # expand the ROI a little to ensure the rotation does not introduce black zones
-        xm1 = max(0, x-w//2)
-        xm2 = min(x+w+w//2, img_width)
-        ym1 = max(0, y-h//2)
-        ym2 = min(y+h+h//2, img_height)
-        preroi = src_image[ym1: ym2, xm1 : xm2] 
+        xm1 = max(0, x - w // 2)
+        xm2 = min(x + w + w // 2, img_width)
+        ym1 = max(0, y - h // 2)
+        ym2 = min(y + h + h // 2, img_height)
+        preroi = src_image[ym1:ym2, xm1:xm2]
 
         left_eye_x, left_eye_y = self.left_eye
         right_eye_x, right_eye_y = self.right_eye
@@ -322,7 +322,7 @@ class Face:
             img = PILImage.fromarray(preroi)  # convert to a PIL image to rotate it
             preroi = np.array(img.rotate(-direction * angle, PILImage.BILINEAR))
 
-        roi = preroi[ y - ym1 : y - ym1 + h, x - xm1 : x - xm1 + w ]
+        roi = preroi[y - ym1 : y - ym1 + h, x - xm1 : x - xm1 + w]
 
         sx = cropped_face_width * 1.0 / self.bb.width
         sy = cropped_face_height * 1.0 / self.bb.height
