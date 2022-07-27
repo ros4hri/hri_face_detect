@@ -1,11 +1,16 @@
 #! /usr/bin/env python3
 
 import tf
-from hri_msgs.msg import IdsList, FacialLandmarks, PointOfInterest2D
+from hri_msgs.msg import (
+    IdsList,
+    FacialLandmarks,
+    NormalizedPointOfInterest2D,
+    NormalizedRegionOfInterest2D,
+    ImageHRI,
+)
 from sensor_msgs.msg import Image, CameraInfo, RegionOfInterest
 from geometry_msgs.msg import Transform, TransformStamped, Vector3, Quaternion
 from std_msgs.msg import Empty, Header
-import tf_conversions.posemath as pm
 from cv_bridge import CvBridge
 import rospy
 import math
@@ -13,7 +18,6 @@ import random
 import cv2
 from PIL import Image as PILImage
 import numpy as np
-from tf.transformations import quaternion_from_euler
 from hri_face_detect.face_pose_estimation import face_pose_estimation
 
 import mediapipe as mp
@@ -160,6 +164,7 @@ class Face:
         self.nb_frames_visible = 1
 
         self.bb = None  # a RegionOfInterest instance
+        self.normalized_bb = None  # a NormalizedRegionOfInterest2D instance
         self.nose_tip = ()
         self.mouth_center = ()
         self.right_eye = ()
@@ -172,80 +177,18 @@ class Face:
         self.head_transform = None
         self.gaze_transform = None
 
-        self.roi_pub = None
-        self.cropped_pub = None
-        self.aligned_pub = None
-        self.landmarks_pub = None
-
-        # True once the publishers are initialised
+        # True once the face has been seen for more than 2 frames
         self.ready = False
 
-    def initialise_publishers(self):
-        """Initialises all the publishers for this face.
+    def get_roi_msg(self):
+        self.normalized_bb.header.id = self.id
+        return self.normalized_bb
 
-        Not done in the constructor as we typically wait for a few frames
-        before publishing anything (to avoid creating too many spurious faces
-        due to detection noise).
-        """
+    def get_landmarks_msg(self):
+        self.facial_landmarks_msg.header.id = self.id
+        return self.facial_landmarks_msg
 
-        # already initialised?
-        if self.ready:
-            return
-
-        self.roi_pub = rospy.Publisher(
-            "/humans/faces/%s/roi" % self.id,
-            RegionOfInterest,
-            queue_size=1,
-        )
-
-        self.cropped_pub = rospy.Publisher(
-            "/humans/faces/%s/cropped" % self.id,
-            Image,
-            queue_size=1,
-        )
-
-        self.aligned_pub = rospy.Publisher(
-            "/humans/faces/%s/aligned" % self.id,
-            Image,
-            queue_size=1,
-        )
-
-        self.landmarks_pub = rospy.Publisher(
-            "/humans/faces/%s/landmarks" % self.id,
-            FacialLandmarks,
-            queue_size=1,
-        )
-
-        rospy.loginfo("New face: %s" % self)
-        self.ready = True
-
-    def publish(self):
-
-        if not self.ready:
-            rospy.logerr(
-                "Trying to publish face information but publishers have not been created yet!"
-            )
-            return
-
-        self.roi_pub.publish(self.bb)
-        self.landmarks_pub.publish(self.facial_landmarks_msg)
-
-    def publish_images(self, src_image):
-
-        if not self.ready:
-            rospy.logerr(
-                "Trying to publish face images but publishers have not been created yet!"
-            )
-            return
-
-        self.publish_cropped_face(src_image)
-        self.publish_aligned_face(src_image)
-
-    def publish_cropped_face(self, src_image):
-
-        # no-one interested in the face image? skip it!
-        if self.cropped_pub.get_num_connections() == 0:
-            return
+    def get_cropped_face(self, src_image):
 
         roi = src_image[
             self.bb.y_offset : self.bb.y_offset + self.bb.height,
@@ -267,19 +210,19 @@ class Face:
 
         output[y_offset : y_offset + scaled_h, x_offset : x_offset + scaled_w] = scaled
 
-        self.cropped_pub.publish(CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
+        msg = ImageHRI(image=CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
+        msg.header.id = self.id
+        msg.header.header.stamp = rospy.Time.now()
 
-    def publish_aligned_face(self, src_image):
+        return msg
+
+    def get_aligned_face(self, src_image):
         """Aligns given face in img based on left and right eye coordinates.
 
         This function is adapted from MIT-licensed DeepFace.
         Author: serengil
         Original source: https://github.com/serengil/deepface/blob/f07f278/deepface/detectors/FaceDetector.py#L68
         """
-
-        # no-one interested in the face image? skip it!
-        if self.aligned_pub.get_num_connections() == 0:
-            return
 
         img_height, img_width, _ = src_image.shape
         x, y, w, h = self.bb.x_offset, self.bb.y_offset, self.bb.width, self.bb.height
@@ -341,7 +284,11 @@ class Face:
 
         output[y_offset : y_offset + scaled_h, x_offset : x_offset + scaled_w] = scaled
 
-        self.aligned_pub.publish(CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
+        msg = ImageHRI(image=CvBridge().cv2_to_imgmsg(output, encoding="bgr8"))
+        msg.header.id = self.id
+        msg.header.header.stamp = rospy.Time.now()
+
+        return msg
 
     def compute_6d_pose(self, K, image, camera_optical_frame):
 
@@ -432,11 +379,6 @@ class Face:
             % (self, self.nb_frames_visible)
         )
 
-        self.roi_pub.unregister()
-        self.cropped_pub.unregister()
-        self.aligned_pub.unregister()
-        self.landmarks_pub.unregister()
-
         self.ready = False
 
     def __repr__(self):
@@ -464,20 +406,20 @@ class FaceDetector:
 
         # PoI = Points of Interest
         poi = [
-            PointOfInterest2D(
-                int(detection.landmark[ros4hri_to_mediapipe[idx]].x * img_width),
-                int(detection.landmark[ros4hri_to_mediapipe[idx]].y * img_height),
-                1,
+            NormalizedPointOfInterest2D(
+                x=detection.landmark[ros4hri_to_mediapipe[idx]].x,
+                y=detection.landmark[ros4hri_to_mediapipe[idx]].y,
+                c=1,
             )
             for idx in range(68)
         ]
 
         # the last two facial landmarks represent the pupils
         # and Mediapipe does not provide pupils estimation.
-        poi.append(PointOfInterest2D(0, 0, 1))  # RIGHT_PUPIL
-        poi.append(PointOfInterest2D(0, 0, 1))  # LEFT_PUPIL
+        poi.append(NormalizedPointOfInterest2D(x=0, y=0, c=1))  # RIGHT_PUPIL
+        poi.append(NormalizedPointOfInterest2D(x=0, y=0, c=1))  # LEFT_PUPIL
 
-        landmarks = FacialLandmarks(poi, img_height, img_width)
+        landmarks = FacialLandmarks(landmarks=poi, height=img_height, width=img_width)
 
         return landmarks
 
@@ -498,9 +440,9 @@ class FaceDetector:
             face["bb"] = self.get_boundingbox(detection, img_cols, img_rows)
 
             landmarks = FacialLandmarks(
-                [PointOfInterest2D(0, 0, 1) for _ in range(70)],
-                img_height,
-                img_width,
+                landmarks=[NormalizedPointOfInterest2D(0, 0, 1) for _ in range(70)],
+                height=img_height,
+                width=img_width,
             )
 
             nose_tip = mp_face_detection.get_key_point(
@@ -508,9 +450,9 @@ class FaceDetector:
             )
             face["nose_tip"] = (nose_tip.x, nose_tip.y)
 
-            landmarks.landmarks[FacialLandmarks.NOSE] = PointOfInterest2D(
-                int(min(nose_tip.x * img_width, img_width)),
-                int(min(nose_tip.y * img_height, img_height)),
+            landmarks.landmarks[FacialLandmarks.NOSE] = NormalizedPointOfInterest2D(
+                nose_tip.x,
+                nose_tip.y,
                 1,
             )
 
@@ -519,9 +461,11 @@ class FaceDetector:
             )
             face["right_eye"] = (right_eye.x, right_eye.y)
 
-            landmarks.landmarks[FacialLandmarks.RIGHT_PUPIL] = PointOfInterest2D(
-                int(min(right_eye.x * img_width, img_width)),
-                int(min(right_eye.y * img_height, img_height)),
+            landmarks.landmarks[
+                FacialLandmarks.RIGHT_PUPIL
+            ] = NormalizedPointOfInterest2D(
+                right_eye.x,
+                right_eye.y,
                 1,
             )
 
@@ -530,9 +474,11 @@ class FaceDetector:
             )
             face["left_eye"] = (left_eye.x, left_eye.y)
 
-            landmarks.landmarks[FacialLandmarks.LEFT_PUPIL] = PointOfInterest2D(
-                int(min(left_eye.x * img_width, img_width)),
-                int(min(left_eye.y * img_height, img_height)),
+            landmarks.landmarks[
+                FacialLandmarks.LEFT_PUPIL
+            ] = NormalizedPointOfInterest2D(
+                left_eye.x,
+                left_eye.y,
                 1,
             )
 
@@ -541,9 +487,11 @@ class FaceDetector:
             )
             face["mouth_center"] = (mouth_center.x, mouth_center.y)
 
-            landmarks.landmarks[FacialLandmarks.MOUTH_INNER_TOP_2] = PointOfInterest2D(
-                int(min(mouth_center.x * img_width, img_width)),
-                int(min(mouth_center.y * img_height, img_height)),
+            landmarks.landmarks[
+                FacialLandmarks.MOUTH_INNER_TOP_2
+            ] = NormalizedPointOfInterest2D(
+                mouth_center.x,
+                mouth_center.y,
                 1,
             )
 
@@ -552,9 +500,11 @@ class FaceDetector:
             )
             face["right_ear_tragion"] = (right_ear_tragion.x, right_ear_tragion.y)
 
-            landmarks.landmarks[FacialLandmarks.RIGHT_EAR] = PointOfInterest2D(
-                int(min(right_ear_tragion.x * img_width, img_width)),
-                int(min(right_ear_tragion.y * img_height, img_height)),
+            landmarks.landmarks[
+                FacialLandmarks.RIGHT_EAR
+            ] = NormalizedPointOfInterest2D(
+                right_ear_tragion.x,
+                right_ear_tragion.y,
                 1,
             )
 
@@ -563,9 +513,9 @@ class FaceDetector:
             )
             face["left_ear_tragion"] = (left_ear_tragion.x, left_ear_tragion.y)
 
-            landmarks.landmarks[FacialLandmarks.LEFT_EAR] = PointOfInterest2D(
-                int(min(left_ear_tragion.x * img_width, img_width)),
-                int(min(left_ear_tragion.y * img_height, img_height)),
+            landmarks.landmarks[FacialLandmarks.LEFT_EAR] = NormalizedPointOfInterest2D(
+                left_ear_tragion.x,
+                left_ear_tragion.y,
                 1,
             )
 
@@ -660,6 +610,19 @@ class RosFaceDetector:
         )
         self.faces_pub = rospy.Publisher("/humans/faces/tracked", IdsList, queue_size=1)
 
+        self.roi_pub = rospy.Publisher(
+            "/humans/faces/roi", NormalizedRegionOfInterest2D, queue_size=1
+        )
+        self.cropped_pub = rospy.Publisher(
+            "/humans/faces/cropped", ImageHRI, queue_size=1
+        )
+        self.aligned_pub = rospy.Publisher(
+            "/humans/faces/aligned", ImageHRI, queue_size=1
+        )
+        self.landmarks_pub = rospy.Publisher(
+            "/humans/faces/landmarks", FacialLandmarks, queue_size=1
+        )
+
         self.facedetector = FaceDetector(face_mesh, max_num_faces)
         self.image_sub = rospy.Subscriber("image", Image, self.callback)
         self.image_info_sub = rospy.Subscriber(
@@ -738,6 +701,16 @@ class RosFaceDetector:
                 True,
             )
 
+            # note that we purposefully do not clamp the values between 0.0 and
+            # 1.0, as faces can be inferred to be partially outside of the image.
+            normalized_bb = NormalizedRegionOfInterest2D(
+                xmin=x / img_width,
+                ymin=y / img_height,
+                xmax=(x + w) / img_width,
+                ymax=(y + h) / img_height,
+                c=1.0,
+            )
+
             # have we seen this face before? -> check based on whether or not
             # bounding boxes overlaps
             face = self.find_previous_match(bb)
@@ -748,12 +721,14 @@ class RosFaceDetector:
                 currentIds.append(face.id)
                 face.nb_frames_visible += 1
 
-                # if it is a 2nd frame, we create all the required publishers.
+                # if it is a 2nd frame, we mark the face as 'ready'.
                 if face.nb_frames_visible == 2:
-                    face.initialise_publishers()
+                    rospy.loginfo("New face: %s" % face)
+                    face.ready = True
 
                 # update the face with its current position and landmarks
                 face.bb = bb
+                face.normalized_bb = normalized_bb
                 face.nose_tip = detection["nose_tip"]
                 face.mouth_center = detection["mouth_center"]
                 face.right_eye = detection["right_eye"]
@@ -765,6 +740,7 @@ class RosFaceDetector:
             else:
                 face = Face()
                 face.bb = bb
+                face.normalized_bb = normalized_bb
                 currentIds.append(face.id)
                 self.knownFaces[face.id] = face
 
@@ -775,12 +751,24 @@ class RosFaceDetector:
                 self.knownFaces[id].delete()
                 del self.knownFaces[id]
 
+        # for 'active' faces, publish their data
         for _, face in self.knownFaces.items():
             if face.ready:
                 if not self.is_shutting_down:
-                    face.publish()
+                    roi_msg = face.get_roi_msg()
+                    self.roi_pub.publish(roi_msg)
+
+                    landmarks_msg = face.get_landmarks_msg()
+                    self.landmarks_pub.publish(landmarks_msg)
+
                 if not self.is_shutting_down:
-                    face.publish_images(image)
+                    if self.cropped_pub.get_num_connections() != 0:
+                        msg = face.get_cropped_face(image)
+                        self.cropped_pub.publish(msg)
+
+                    if self.aligned_pub.get_num_connections() != 0:
+                        msg = face.get_aligned_face(image)
+                        self.aligned_pub.publish(msg)
 
                 if not self.is_shutting_down:
                     if hasattr(self, "K"):
