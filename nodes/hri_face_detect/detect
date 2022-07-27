@@ -9,10 +9,10 @@ import tf_conversions.posemath as pm
 from cv_bridge import CvBridge
 import rospy
 import math
+import random
 import cv2
 from PIL import Image as PILImage
 import numpy as np
-import uuid
 from tf.transformations import quaternion_from_euler
 from hri_face_detect.face_pose_estimation import face_pose_estimation
 
@@ -150,10 +150,12 @@ class Face:
 
         # generate unique ID
         if deterministic_id:
-            self.id = "%05d" % Face.last_id
+            self.id = "f%05d" % Face.last_id
             Face.last_id = (Face.last_id + 1) % 10000
         else:
-            self.id = str(uuid.uuid4())[:5]  # for a 5 char long ID
+            self.id = "".join(
+                random.choices("abcdefghijklmnopqrstuvwxyz", k=5)
+            )  # for a 5 char long ID
 
         self.nb_frames_visible = 1
 
