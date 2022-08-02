@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.4.1 (2022-08-02)
+------------------
 * ensure face id are strings starting with a letter
 * [cosmetic] code formatting
 * pep8 code formatting
