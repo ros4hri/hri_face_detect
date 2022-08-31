@@ -477,7 +477,7 @@ class FaceDetector:
         poi.append(NormalizedPointOfInterest2D(0, 0, 1))  # RIGHT_PUPIL
         poi.append(NormalizedPointOfInterest2D(0, 0, 1))  # LEFT_PUPIL
 
-        landmarks = FacialLandmarks(poi, img_height, img_width)
+        landmarks = FacialLandmarks(landmarks=poi, height=img_height, width=img_width)
 
         return landmarks
 
