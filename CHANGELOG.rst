@@ -2,6 +2,11 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* update to hri_msgs-0.8.0
+* Contributors: Séverin Lemaignan
+
 1.4.1 (2022-08-02)
 ------------------
 * ensure face id are strings starting with a letter
