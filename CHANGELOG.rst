@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.4.2 (2022-08-31)
+------------------
 * update to hri_msgs-0.8.0
 * Contributors: Séverin Lemaignan
 
