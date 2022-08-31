@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
 import tf
-from hri_msgs.msg import IdsList, FacialLandmarks, PointOfInterest2D
+from hri_msgs.msg import IdsList, FacialLandmarks, NormalizedPointOfInterest2D
 from sensor_msgs.msg import Image, CameraInfo, RegionOfInterest
 from geometry_msgs.msg import Transform, TransformStamped, Vector3, Quaternion
 from std_msgs.msg import Empty, Header
@@ -464,7 +464,7 @@ class FaceDetector:
 
         # PoI = Points of Interest
         poi = [
-            PointOfInterest2D(
+            NormalizedPointOfInterest2D(
                 int(detection.landmark[ros4hri_to_mediapipe[idx]].x * img_width),
                 int(detection.landmark[ros4hri_to_mediapipe[idx]].y * img_height),
                 1,
@@ -474,8 +474,8 @@ class FaceDetector:
 
         # the last two facial landmarks represent the pupils
         # and Mediapipe does not provide pupils estimation.
-        poi.append(PointOfInterest2D(0, 0, 1))  # RIGHT_PUPIL
-        poi.append(PointOfInterest2D(0, 0, 1))  # LEFT_PUPIL
+        poi.append(NormalizedPointOfInterest2D(0, 0, 1))  # RIGHT_PUPIL
+        poi.append(NormalizedPointOfInterest2D(0, 0, 1))  # LEFT_PUPIL
 
         landmarks = FacialLandmarks(poi, img_height, img_width)
 
@@ -498,7 +498,7 @@ class FaceDetector:
             face["bb"] = self.get_boundingbox(detection, img_cols, img_rows)
 
             landmarks = FacialLandmarks(
-                [PointOfInterest2D(0, 0, 1) for _ in range(70)],
+                [NormalizedPointOfInterest2D(0, 0, 1) for _ in range(70)],
                 img_height,
                 img_width,
             )
@@ -508,7 +508,7 @@ class FaceDetector:
             )
             face["nose_tip"] = (nose_tip.x, nose_tip.y)
 
-            landmarks.landmarks[FacialLandmarks.NOSE] = PointOfInterest2D(
+            landmarks.landmarks[FacialLandmarks.NOSE] = NormalizedPointOfInterest2D(
                 int(min(nose_tip.x * img_width, img_width)),
                 int(min(nose_tip.y * img_height, img_height)),
                 1,
@@ -519,7 +519,9 @@ class FaceDetector:
             )
             face["right_eye"] = (right_eye.x, right_eye.y)
 
-            landmarks.landmarks[FacialLandmarks.RIGHT_PUPIL] = PointOfInterest2D(
+            landmarks.landmarks[
+                FacialLandmarks.RIGHT_PUPIL
+            ] = NormalizedPointOfInterest2D(
                 int(min(right_eye.x * img_width, img_width)),
                 int(min(right_eye.y * img_height, img_height)),
                 1,
@@ -530,7 +532,9 @@ class FaceDetector:
             )
             face["left_eye"] = (left_eye.x, left_eye.y)
 
-            landmarks.landmarks[FacialLandmarks.LEFT_PUPIL] = PointOfInterest2D(
+            landmarks.landmarks[
+                FacialLandmarks.LEFT_PUPIL
+            ] = NormalizedPointOfInterest2D(
                 int(min(left_eye.x * img_width, img_width)),
                 int(min(left_eye.y * img_height, img_height)),
                 1,
@@ -541,7 +545,9 @@ class FaceDetector:
             )
             face["mouth_center"] = (mouth_center.x, mouth_center.y)
 
-            landmarks.landmarks[FacialLandmarks.MOUTH_INNER_TOP_2] = PointOfInterest2D(
+            landmarks.landmarks[
+                FacialLandmarks.MOUTH_INNER_TOP_2
+            ] = NormalizedPointOfInterest2D(
                 int(min(mouth_center.x * img_width, img_width)),
                 int(min(mouth_center.y * img_height, img_height)),
                 1,
@@ -552,7 +558,9 @@ class FaceDetector:
             )
             face["right_ear_tragion"] = (right_ear_tragion.x, right_ear_tragion.y)
 
-            landmarks.landmarks[FacialLandmarks.RIGHT_EAR] = PointOfInterest2D(
+            landmarks.landmarks[
+                FacialLandmarks.RIGHT_EAR
+            ] = NormalizedPointOfInterest2D(
                 int(min(right_ear_tragion.x * img_width, img_width)),
                 int(min(right_ear_tragion.y * img_height, img_height)),
                 1,
@@ -563,7 +571,7 @@ class FaceDetector:
             )
             face["left_ear_tragion"] = (left_ear_tragion.x, left_ear_tragion.y)
 
-            landmarks.landmarks[FacialLandmarks.LEFT_EAR] = PointOfInterest2D(
+            landmarks.landmarks[FacialLandmarks.LEFT_EAR] = NormalizedPointOfInterest2D(
                 int(min(left_ear_tragion.x * img_width, img_width)),
                 int(min(left_ear_tragion.y * img_height, img_height)),
                 1,
