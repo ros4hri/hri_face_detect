@@ -498,9 +498,9 @@ class FaceDetector:
             face["bb"] = self.get_boundingbox(detection, img_cols, img_rows)
 
             landmarks = FacialLandmarks(
-                [NormalizedPointOfInterest2D(0, 0, 1) for _ in range(70)],
-                img_height,
-                img_width,
+                landmarks = [NormalizedPointOfInterest2D(0, 0, 1) for _ in range(70)],
+                height = img_height,
+                width = img_width,
             )
 
             nose_tip = mp_face_detection.get_key_point(
