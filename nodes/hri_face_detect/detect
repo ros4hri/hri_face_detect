@@ -16,6 +16,8 @@ import numpy as np
 from tf.transformations import quaternion_from_euler
 from hri_face_detect.face_pose_estimation import face_pose_estimation
 
+import threading
+
 import mediapipe as mp
 
 mp_face_detection = mp.solutions.face_detection
@@ -446,6 +448,8 @@ class Face:
 class FaceDetector:
     def __init__(self, face_mesh=True, max_num_faces=10):
 
+        self.start_timestamp = rospy.Time.now()
+
         self.face_mesh = face_mesh
 
         if not face_mesh:
@@ -587,6 +591,10 @@ class FaceDetector:
         """img is expected as RGB"""
         img_rows, img_cols, _ = img.shape
 
+        delta = (rospy.Time.now() - self.start_timestamp)
+        ts = int(delta.secs * 1e6 + int(delta.nsecs/1000)) - 33333 
+        self.detector._simulated_timestamp = ts 
+
         detections = self.detector.process(img)
         if not detections or not detections.multi_face_landmarks:
             return []
@@ -659,6 +667,10 @@ class FaceDetector:
 class RosFaceDetector:
     def __init__(self, debug=False, face_mesh=True, max_num_faces=4):
 
+        self.processing_lock = threading.Lock()
+        self.skipped_images = 0
+        self.start_skipping_ts = rospy.Time.now()
+
         self.is_shutting_down = False
         self.debug = debug
         self.face_mesh = face_mesh
@@ -669,9 +681,9 @@ class RosFaceDetector:
         self.faces_pub = rospy.Publisher("/humans/faces/tracked", IdsList, queue_size=1)
 
         self.facedetector = FaceDetector(face_mesh, max_num_faces)
-        self.image_sub = rospy.Subscriber("image", Image, self.callback)
+        self.image_sub = rospy.Subscriber("image", Image, self.callback, queue_size=1)
         self.image_info_sub = rospy.Subscriber(
-            "camera_info", CameraInfo, self.info_callback
+            "camera_info", CameraInfo, self.info_callback, queue_size=1
         )
 
         rospy.loginfo(
@@ -716,6 +728,17 @@ class RosFaceDetector:
 
     def callback(self, rgb_msg):
 
+
+        if self.processing_lock.locked():
+            self.skipped_images += 1
+            if self.skipped_images > 100:
+                rospy.logwarn("face_detect's mediapipe processing too slow. Skipped 100 new incoming image over the last %.1fsecs" % (rospy.Time.now()-self.start_skipping_ts).to_sec())
+                self.start_skipping_ts = rospy.Time.now()
+                self.skipped_images = 0
+            return
+
+        self.processing_lock.acquire()
+
         if self.is_shutting_down:
             return
 
@@ -733,6 +756,8 @@ class RosFaceDetector:
             detections = self.facedetector.detect_face_mesh(
                 image, img_height, img_width
             )
+
+        self.processing_lock.release()
 
         currentIds = []
 
