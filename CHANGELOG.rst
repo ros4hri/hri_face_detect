@@ -2,6 +2,12 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* ensure mediapipe is not called from 2 threads in parallel
+  This was causing mediapipe internal timestamp issues
+* Contributors: Séverin Lemaignan
+
 1.4.4 (2022-10-06)
 ------------------
 * fix FacialLandmark object initialisation
