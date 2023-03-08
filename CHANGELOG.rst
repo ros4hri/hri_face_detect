@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.4.5 (2023-03-08)
+------------------
 * ensure mediapipe is not called from 2 threads in parallel
   This was causing mediapipe internal timestamp issues
 * Contributors: Séverin Lemaignan
