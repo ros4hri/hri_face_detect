@@ -20,7 +20,6 @@
   <exec_depend>tf_conversions</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
 
-
   <!-- The export tag contains other, unspecified, tags -->
   <export>
     <!-- Other tools can request additional information be placed here -->

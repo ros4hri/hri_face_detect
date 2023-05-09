@@ -15,6 +15,7 @@ from PIL import Image as PILImage
 import numpy as np
 from tf.transformations import quaternion_from_euler
 from hri_face_detect.face_pose_estimation import face_pose_estimation
+from hri_face_detect.one_euro_filter import OneEuroFilter, QuatOneEuroFilter
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 
 import threading
@@ -47,6 +48,12 @@ P3D_RIGHT_EAR = (-100.0, -77.5, -6.0)
 P3D_LEFT_EAR = (-100.0, 77.5, -6.0)
 P3D_NOSE = (21.0, 0.0, -48.0)
 P3D_STOMION = (10.0, 0.0, -75.0)
+
+# filtering parameters
+BETA_POSITION=0.05 
+BETA_QUATERNION = 0.01
+D_CUTOFF_POSITION=0.5 
+MIN_CUTOFF_POSITION=0.3
 
 # face detection processing time in ms triggering a diagnostic warning
 FACE_DETECTION_PROC_TIME_WARN = 500.
@@ -186,6 +193,8 @@ class Face:
 
         # True once the publishers are initialised
         self.ready = False
+        self.one_euro_filters_xyz = [None]*3
+        self.one_euro_filter_quaternion = None
 
     def initialise_publishers(self):
         """Initialises all the publishers for this face.
@@ -397,6 +406,52 @@ class Face:
         )
 
         trans_vec, angles = face_pose_estimation(points_2D, K)
+        angles = np.array(angles)
+        angles /= (180/np.pi)
+        angles_quaternion = tf.transformations.quaternion_from_euler(*angles)
+
+        current_time = rospy.Time.now().to_sec()
+
+        if not self.one_euro_filters_xyz[0]:
+            self.one_euro_filters_xyz[0] = OneEuroFilter(
+                current_time, 
+                trans_vec[0] / 1000, 
+                beta=BETA_POSITION, 
+                d_cutoff=D_CUTOFF_POSITION, 
+                min_cutoff=MIN_CUTOFF_POSITION)
+            self.one_euro_filters_xyz[1] = OneEuroFilter(
+                current_time, 
+                trans_vec[1] / 1000, 
+                beta=BETA_POSITION, 
+                d_cutoff=D_CUTOFF_POSITION, 
+                min_cutoff=MIN_CUTOFF_POSITION)
+            self.one_euro_filters_xyz[2] = OneEuroFilter(
+                current_time, 
+                trans_vec[2] / 1000, 
+                beta=BETA_POSITION, 
+                d_cutoff=D_CUTOFF_POSITION, 
+                min_cutoff=MIN_CUTOFF_POSITION)
+        else:
+            trans_vec[0] = self.one_euro_filters_xyz[0](
+                current_time,
+                trans_vec[0] / 1000)[0] * 1000
+            trans_vec[1] = self.one_euro_filters_xyz[1](
+                current_time,
+                trans_vec[1] / 1000)[0] * 1000
+            trans_vec[2] = self.one_euro_filters_xyz[2](
+                current_time,
+                trans_vec[2] / 1000)[0] * 1000
+
+        if not self.one_euro_filter_quaternion:
+            self.one_euro_filter_quaternion = QuatOneEuroFilter(
+                current_time, 
+                angles_quaternion, 
+                beta=BETA_QUATERNION,
+                min_cutoff=MIN_CUTOFF_POSITION)
+        else:
+            angles_quaternion = self.one_euro_filter_quaternion(
+                current_time,
+                angles_quaternion)           
 
         # calculating angle
         self.head_transform = TransformStamped(
@@ -409,11 +464,7 @@ class Face:
                     trans_vec[2] / 1000,
                 ),
                 Quaternion(
-                    *tf.transformations.quaternion_from_euler(
-                        angles[0] / 180 * np.pi,
-                        angles[1] / 180 * np.pi,
-                        angles[2] / 180 * np.pi,
-                    )
+                    *angles_quaternion
                 ),
             ),
         )
@@ -696,7 +747,6 @@ class RosFaceDetector:
         diag_period = rospy.get_param("~diagnostic_period", 1)
         self.diag_timer = rospy.Timer(rospy.Duration(diag_period), self.do_diagnostics)
         self.diag_pub = rospy.Publisher("/diagnostics", DiagnosticArray, queue_size=1)
-
         rospy.loginfo(
             "Ready. Waiting for images to be published on %s." % self.image_sub.name
         )
@@ -709,7 +759,6 @@ class RosFaceDetector:
         self.knownFaces = {}
 
         self.tb = tf.TransformBroadcaster()
-
     def do_diagnostics(self, event=None):
         arr = DiagnosticArray()
         arr.header.stamp = rospy.Time.now()
@@ -861,7 +910,6 @@ class RosFaceDetector:
 
                         self.tb.sendTransformMessage(face.head_transform)
                         self.tb.sendTransformMessage(face.gaze_transform)
-
         self.detection_proc_duration = (rospy.Time.now() - self.detection_start_proc_time).to_sec()
 
         self.faces_pub.publish(
