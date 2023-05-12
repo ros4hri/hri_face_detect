@@ -2,6 +2,12 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* add diagnostics
+* Migrate to new python3-mediapipe rosdep key
+* Contributors: Séverin Lemaignan, lukajuricic, mathiasluedtke
+
 1.4.5 (2023-03-08)
 ------------------
 * ensure mediapipe is not called from 2 threads in parallel
