@@ -9,7 +9,8 @@ catkin_package(
     std_msgs
     tf
     tf_conversions
-    hri_msgs)
+    hri_msgs
+    diagnostic_msgs)
 
 catkin_python_setup()
 
