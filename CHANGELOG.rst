@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.4.7 (2023-05-23)
+------------------
 * face pose filtering using the one-euro filter
 * Contributors: lorenzoferrini
 
