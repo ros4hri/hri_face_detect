@@ -3,7 +3,7 @@
 import tf
 from hri_msgs.msg import IdsList, FacialLandmarks, NormalizedPointOfInterest2D
 from sensor_msgs.msg import Image, CameraInfo, RegionOfInterest
-from geometry_msgs.msg import Transform, TransformStamped, Vector3, Quaternion
+from geometry_msgs.msg import Transform, TransformStamped, Vector3, Quaternion, PointStamped
 from std_msgs.msg import Empty, Header
 import tf_conversions.posemath as pm
 from cv_bridge import CvBridge
@@ -160,7 +160,7 @@ class Face:
 
     last_id = 0
 
-    def __init__(self, deterministic_id=False):
+    def __init__(self, deterministic_id=False, transform_listener = None, filtering_frame = None):
 
         # generate unique ID
         if deterministic_id:
@@ -195,6 +195,10 @@ class Face:
         self.ready = False
         self.one_euro_filters_xyz = [None]*3
         self.one_euro_filter_quaternion = None
+
+        self.filtering_frame = filtering_frame
+
+        self.tl = transform_listener
 
     def initialise_publishers(self):
         """Initialises all the publishers for this face.
@@ -410,6 +414,27 @@ class Face:
         angles /= (180/np.pi)
         angles_quaternion = tf.transformations.quaternion_from_euler(*angles)
 
+        if self.tl and self.filtering_frame:
+            point_trans_vec = PointStamped()
+            point_trans_vec.point.x = trans_vec[0] / 1000
+            point_trans_vec.point.y = trans_vec[1] / 1000
+            point_trans_vec.point.z = trans_vec[2] / 1000
+
+            point_trans_vec.header.frame_id = camera_optical_frame
+            point_trans_vec.header.stamp = rospy.Time(0.0)
+
+            try:
+                point_trans_vec = self.tl.transformPoint(self.filtering_frame,
+                                                         point_trans_vec)
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                rospy.logerr("An error occured while"+\
+                             "transforming from frame %s to frame %s"\
+                             % (camera_optical_frame, self.filtering_frame))
+
+            trans_vec[0] = point_trans_vec.point.x * 1000
+            trans_vec[1] = point_trans_vec.point.y * 1000
+            trans_vec[2] = point_trans_vec.point.z * 1000
+
         current_time = rospy.Time.now().to_sec()
 
         if not self.one_euro_filters_xyz[0]:
@@ -451,7 +476,27 @@ class Face:
         else:
             angles_quaternion = self.one_euro_filter_quaternion(
                 current_time,
-                angles_quaternion)           
+                angles_quaternion)    
+
+        if self.tl and self.filtering_frame:
+            point_trans_vec = PointStamped()
+            point_trans_vec.point.x = trans_vec[0] / 1000
+            point_trans_vec.point.y = trans_vec[1] / 1000
+            point_trans_vec.point.z = trans_vec[2] / 1000
+
+            point_trans_vec.header.frame_id = self.filtering_frame
+            point_trans_vec.header.stamp = rospy.Time(0.0)
+
+            try:
+                point_trans_vec = self.tl.transformPoint(camera_optical_frame, point_trans_vec)
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                rospy.logerr("An error occured while"+\
+                             "transforming from frame %s to frame %s"\
+                             % (self.filtering_frame, camera_optical_frame))
+
+            trans_vec[0] = point_trans_vec.point.x * 1000
+            trans_vec[1] = point_trans_vec.point.y * 1000
+            trans_vec[2] = point_trans_vec.point.z * 1000       
 
         # calculating angle
         self.head_transform = TransformStamped(
@@ -721,7 +766,7 @@ class FaceDetector:
 
 
 class RosFaceDetector:
-    def __init__(self, debug=False, face_mesh=True, max_num_faces=4):
+    def __init__(self, debug=False, face_mesh=True, max_num_faces=4, filtering_frame=None):
 
         self.processing_lock = threading.Lock()
         self.skipped_images = 0
@@ -732,6 +777,10 @@ class RosFaceDetector:
         self.is_shutting_down = False
         self.debug = debug
         self.face_mesh = face_mesh
+        self.filtering_frame = filtering_frame
+        self.flitering_frame_to_validate = True
+
+        self.tl = tf.TransformListener()
 
         semaphore_pub = rospy.Publisher(
             "/hri_face_detect/ready", Empty, queue_size=1, latch=True
@@ -815,6 +864,17 @@ class RosFaceDetector:
 
     def callback(self, rgb_msg):
 
+        if self.flitering_frame_to_validate and self.filtering_frame:
+            self.flitering_frame_to_validate = False
+            try: 
+                self.tl.lookupTransform(self.filtering_frame,
+                                        rgb_msg.header.frame_id,
+                                        rospy.Time(0.0))
+            except tf.LookupException:
+                rospy.logerr("The filtering_frame does not seem to belong to the same tree"+\
+                              "of the camera optical frame. Filtering will be perfomed using the "+\
+                              "camera optical frame: %s" % rgb_msg.header.frame_id)
+                self.filtering_frame = None
 
         if self.processing_lock.locked():
             self.skipped_images += 1
@@ -884,7 +944,8 @@ class RosFaceDetector:
                 face.facial_landmarks_msg = detection["facial_landmarks_msg"]
 
             else:
-                face = Face()
+                face = Face(transform_listener = self.tl,
+                            filtering_frame = self.filtering_frame)
                 face.bb = bb
                 currentIds.append(face.id)
                 self.knownFaces[face.id] = face
@@ -986,7 +1047,13 @@ if __name__ == "__main__":
     face_mesh = rospy.get_param("~face_mesh", True)
     max_num_faces = rospy.get_param("~max_num_faces", 4)
 
-    detector = RosFaceDetector(debug, face_mesh, max_num_faces)
+    filtering_frame = rospy.get_param("~filtering_frame", None)
+
+    rospy.loginfo("filtering frame: %s. Before filtering the face position,\
+                   the raw estimation will be transformed into this frame."\
+                   % filtering_frame)
+
+    detector = RosFaceDetector(debug, face_mesh, max_num_faces, filtering_frame)
 
     rospy.on_shutdown(detector.close)
 
