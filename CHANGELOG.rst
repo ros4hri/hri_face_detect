@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.4.8 (2023-06-22)
+------------------
 * added filtering_frame parameter
   the user can now decide which frame to use to filter
   the faces position
