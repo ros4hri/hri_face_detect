@@ -10,7 +10,7 @@ Detection](https://google.github.io/mediapipe/solutions/face_mesh.html)
 The node publishes detected faces using the ROS4HRI conventions. 
 It specifically publishes:
 
-- `humans/faces/<faceID>/roi` as `sensor_msgs/RegionOfInterest.msg`
+- `humans/faces/<faceID>/roi` as `hri_msgs/NormalizedRegionOfInterest2D.msg`
 - `humans/faces/<faceID>/cropped` as `sensor_msgs/Image.msg`
 - `humans/faces/<faceID>/landmarks` as `hri_msgs/FacialLandmarks.msg`
 - `humans/faces/tracked` as `hri_msgs/IdsList.msg`

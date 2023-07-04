@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
 import tf
-from hri_msgs.msg import IdsList, FacialLandmarks, NormalizedPointOfInterest2D
+from hri_msgs.msg import IdsList, FacialLandmarks, NormalizedPointOfInterest2D, NormalizedRegionOfInterest2D
 from sensor_msgs.msg import Image, CameraInfo, RegionOfInterest
 from geometry_msgs.msg import Transform, TransformStamped, Vector3, Quaternion, PointStamped
 from std_msgs.msg import Empty, Header
@@ -214,7 +214,7 @@ class Face:
 
         self.roi_pub = rospy.Publisher(
             "/humans/faces/%s/roi" % self.id,
-            RegionOfInterest,
+            NormalizedRegionOfInterest2D,
             queue_size=1,
         )
 
@@ -239,7 +239,7 @@ class Face:
         rospy.loginfo("New face: %s" % self)
         self.ready = True
 
-    def publish(self):
+    def publish(self, src_image):
 
         if not self.ready:
             rospy.logerr(
@@ -247,19 +247,21 @@ class Face:
             )
             return
 
-        self.roi_pub.publish(self.bb)
         self.landmarks_pub.publish(self.facial_landmarks_msg)
-
-    def publish_images(self, src_image):
-
-        if not self.ready:
-            rospy.logerr(
-                "Trying to publish face images but publishers have not been created yet!"
-            )
-            return
-
+        self.publish_normalized_roi(src_image)
         self.publish_cropped_face(src_image)
         self.publish_aligned_face(src_image)
+
+    def publish_normalized_roi(self, src_image):
+
+        x, y, w, h = self.bb.x_offset, self.bb.y_offset, self.bb.width, self.bb.height
+        bb_norm = NormalizedRegionOfInterest2D()
+        bb_norm.xmin = x / src_image.shape[1]
+        bb_norm.ymin = y / src_image.shape[0]
+        bb_norm.xmax = (x + w) / src_image.shape[1]
+        bb_norm.ymax = (y + h) / src_image.shape[0]
+        bb_norm.c = 0.5 # TODO: derive from detection confidence
+        self.roi_pub.publish(bb_norm)
 
     def publish_cropped_face(self, src_image):
 
@@ -961,9 +963,7 @@ class RosFaceDetector:
         for _, face in self.knownFaces.items():
             if face.ready:
                 if not self.is_shutting_down:
-                    face.publish()
-                if not self.is_shutting_down:
-                    face.publish_images(image)
+                    face.publish(image)
 
                 if not self.is_shutting_down:
                     if hasattr(self, "K"):
