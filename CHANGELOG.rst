@@ -2,6 +2,11 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* change RoI message type to hri_msgs/NormalizedRegionOfInterest2D
+* Contributors: Luka Juricic
+
 1.4.8 (2023-06-22)
 ------------------
 * added filtering_frame parameter
