@@ -572,8 +572,8 @@ class FaceDetector:
         # PoI = Points of Interest
         poi = [
             NormalizedPointOfInterest2D(
-                int(detection.landmark[ros4hri_to_mediapipe[idx]].x * img_width),
-                int(detection.landmark[ros4hri_to_mediapipe[idx]].y * img_height),
+                float(detection.landmark[ros4hri_to_mediapipe[idx]].x),
+                float(detection.landmark[ros4hri_to_mediapipe[idx]].y),
                 1,
             )
             for idx in range(68)
