@@ -5,24 +5,31 @@
   <description>Google Mediapipe-based face detection for ROS4HRI</description>
 
   <maintainer email="severin.lemaignan@pal-robotics.com">Séverin Lemaignan</maintainer>
+  <maintainer email="luka.juricic@pal-robotics.com">Luka Juricic</maintainer>
 
   <license>BSD</license>
 
   <author email="severin.lemaignan@pal-robotics.com">Séverin Lemaignan</author>
 
   <buildtool_depend>catkin</buildtool_depend>
-  <exec_depend>rospy</exec_depend>
-  <exec_depend>python3-mediapipe</exec_depend>
-  <exec_depend>std_msgs</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
-  <exec_depend>hri_msgs</exec_depend>
-  <exec_depend>tf</exec_depend>
-  <exec_depend>tf_conversions</exec_depend>
+
+  <build_depend>pybind11_catkin</build_depend>
+  <build_depend>pybind11-dev</build_depend>
+
   <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>hri_msgs</exec_depend>
+  <exec_depend>pybind11_catkin</exec_depend>
+  <exec_depend>pybind11-dev</exec_depend>
+  <exec_depend>python3-mediapipe</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-pil</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>tf</exec_depend>
 
-  <!-- The export tag contains other, unspecified, tags -->
   <export>
-    <!-- Other tools can request additional information be placed here -->
-
   </export>
 </package>

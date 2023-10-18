@@ -1,0 +1,1033 @@
+#! /usr/bin/env python3
+
+from copy import deepcopy
+from cv_bridge import CvBridge
+import cv2
+from dataclasses import astuple, dataclass, InitVar
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from geometry_msgs.msg import Transform, TransformStamped, Vector3, Quaternion, PointStamped
+from hri_face_detect.face_pose_estimation import face_pose_estimation
+from hri_face_detect.one_euro_filter import OneEuroFilter, QuatOneEuroFilter
+from hri_msgs.msg import FacialLandmarks, IdsList, NormalizedPointOfInterest2D, NormalizedRegionOfInterest2D
+import math
+from mediapipe.python.solutions.face_mesh import FaceMesh
+import numpy as np
+from PIL import Image as PILImage
+import random
+import rospy
+from scipy.optimize import linear_sum_assignment
+from sensor_msgs.msg import Image, CameraInfo
+from std_msgs.msg import Empty, Header
+import tf
+from threading import Lock
+from typing import Dict
+from yunet_detector import YuNetDetector
+
+# minimum image fraction of a face detection bounding box to trigger face mesh detection
+MIN_FACE_IMAGE_FRAC_FOR_MESH = 0.02
+
+# max nb of face meshes detected in the same frame
+MAX_FACE_MASH_N = 4
+
+# min number of frames a face is detected before it is tracked
+MIN_FRAMES_FACE_TRACKING = 4
+
+# max number of frames a face is not detected before it is not tracked anymore
+MAX_FRAMES_FACE_RETENTION = 4
+
+# max distance, relative to RoI diagonal, between the RoI centers of two
+# successive detections to consider they belong to the same person
+MAX_ROIS_REL_DISTANCE = 0.5
+
+# max scale factor between two successive
+# regions of interest to consider they
+# belong to the same person
+MAX_SCALING_ROIS = 1.5
+
+# default size in pixels for the re-published faces
+# can be changed via the ROS parameters
+# /humans/faces/width and /humans/faces/height
+cropped_face_width = 128
+cropped_face_height = 128
+
+# filtering parameters
+BETA_POSITION=0.05 
+BETA_QUATERNION = 0.01
+D_CUTOFF_POSITION=0.5 
+MIN_CUTOFF_POSITION=0.3
+
+# diagnostic message publish rate in Hertz
+DIAG_PUB_RATE = 1
+
+# face detection processing time in ms triggering a diagnostic warning
+FACE_DETECTION_PROC_TIME_WARN = 500.
+# face detection processing time in ms triggering a diagnostic error
+FACE_DETECTION_PROC_TIME_ERROR = 2000.
+
+# average adult male face key points in mm and own face reference frame
+P3D_RIGHT_EYE = (-20.0, -65.5, -5.0)
+P3D_LEFT_EYE = (-20.0, 65.5, -5.0)
+P3D_RIGHT_EAR = (-100.0, -77.5, -6.0)
+P3D_LEFT_EAR = (-100.0, 77.5, -6.0)
+P3D_NOSE = (21.0, 0.0, -48.0)
+P3D_STOMION = (10.0, 0.0, -75.0)
+
+# ROS4HRI to mediapipe landmarks mapping
+# ROS4HRI FacialLandmarks ref: https://raw.githubusercontent.com/CMU-Perceptual-Computing-Lab/openpose/master/.github/media/keypoints_face.png
+# Mediapipe Landmarks ref: https://i.stack.imgur.com/5Mohl.jpg and https://developers.google.com/static/mediapipe/images/solutions/face_landmarker_keypoints.png
+ros4hri_to_mp_landmarks_mapping = {
+    FacialLandmarks.RIGHT_EAR: 34,
+    FacialLandmarks.RIGHT_PROFILE_1: 227,
+    FacialLandmarks.RIGHT_PROFILE_2: 137,
+    FacialLandmarks.RIGHT_PROFILE_3: 177,
+    FacialLandmarks.RIGHT_PROFILE_4: 215,
+    FacialLandmarks.RIGHT_PROFILE_5: 135,
+    FacialLandmarks.RIGHT_PROFILE_6: 170,
+    FacialLandmarks.RIGHT_PROFILE_7: 171,
+    FacialLandmarks.MENTON: 175,
+    FacialLandmarks.LEFT_EAR: 264,
+    FacialLandmarks.LEFT_PROFILE_1: 447,
+    FacialLandmarks.LEFT_PROFILE_2: 366,
+    FacialLandmarks.LEFT_PROFILE_3: 401,
+    FacialLandmarks.LEFT_PROFILE_4: 435,
+    FacialLandmarks.LEFT_PROFILE_5: 364,
+    FacialLandmarks.LEFT_PROFILE_6: 395,
+    FacialLandmarks.LEFT_PROFILE_7: 396,
+    FacialLandmarks.RIGHT_EYEBROW_OUTSIDE: 70,
+    FacialLandmarks.RIGHT_EYEBROW_1: 63,
+    FacialLandmarks.RIGHT_EYEBROW_2: 105,
+    FacialLandmarks.RIGHT_EYEBROW_3: 66,
+    FacialLandmarks.RIGHT_EYEBROW_INSIDE: 107,
+    FacialLandmarks.LEFT_EYEBROW_OUTSIDE: 300,
+    FacialLandmarks.LEFT_EYEBROW_1: 293,
+    FacialLandmarks.LEFT_EYEBROW_2: 334,
+    FacialLandmarks.LEFT_EYEBROW_3: 296,
+    FacialLandmarks.LEFT_EYEBROW_INSIDE: 336,
+    FacialLandmarks.RIGHT_EYE_OUTSIDE: 130,
+    FacialLandmarks.RIGHT_EYE_TOP_1: 29,
+    FacialLandmarks.RIGHT_EYE_TOP_2: 28,
+    FacialLandmarks.RIGHT_EYE_INSIDE: 243,
+    FacialLandmarks.RIGHT_EYE_BOTTOM_1: 24,
+    FacialLandmarks.RIGHT_EYE_BOTTOM_2: 22,
+    FacialLandmarks.LEFT_EYE_OUTSIDE: 359,
+    FacialLandmarks.LEFT_EYE_TOP_1: 259,
+    FacialLandmarks.LEFT_EYE_TOP_2: 258,
+    FacialLandmarks.LEFT_EYE_INSIDE: 463,
+    FacialLandmarks.LEFT_EYE_BOTTOM_1: 254,
+    FacialLandmarks.LEFT_EYE_BOTTOM_2: 252,
+    FacialLandmarks.SELLION: 6,
+    FacialLandmarks.NOSE_1: 197,
+    FacialLandmarks.NOSE_2: 4,
+    FacialLandmarks.NOSE: 1,
+    FacialLandmarks.NOSTRIL_1: 242,
+    FacialLandmarks.NOSTRIL_2: 141,
+    FacialLandmarks.NOSTRIL_3: 94,
+    FacialLandmarks.NOSTRIL_4: 370,
+    FacialLandmarks.NOSTRIL_5: 462,
+    FacialLandmarks.MOUTH_OUTER_RIGHT: 61,
+    FacialLandmarks.MOUTH_OUTER_TOP_1: 40,
+    FacialLandmarks.MOUTH_OUTER_TOP_2: 37,
+    FacialLandmarks.MOUTH_OUTER_TOP_3: 0,
+    FacialLandmarks.MOUTH_OUTER_TOP_4: 267,
+    FacialLandmarks.MOUTH_OUTER_TOP_5: 270,
+    FacialLandmarks.MOUTH_OUTER_LEFT: 291,
+    FacialLandmarks.MOUTH_OUTER_BOTTOM_1: 321,
+    FacialLandmarks.MOUTH_OUTER_BOTTOM_2: 314,
+    FacialLandmarks.MOUTH_OUTER_BOTTOM_3: 17,
+    FacialLandmarks.MOUTH_OUTER_BOTTOM_4: 84,
+    FacialLandmarks.MOUTH_OUTER_BOTTOM_5: 91,
+    FacialLandmarks.MOUTH_INNER_RIGHT: 62,
+    FacialLandmarks.MOUTH_INNER_TOP_1: 41,
+    FacialLandmarks.MOUTH_INNER_TOP_2: 12,
+    FacialLandmarks.MOUTH_INNER_TOP_3: 271,
+    FacialLandmarks.MOUTH_INNER_LEFT: 292,
+    FacialLandmarks.MOUTH_INNER_BOTTOM_1: 403,
+    FacialLandmarks.MOUTH_INNER_BOTTOM_2: 15,
+    FacialLandmarks.MOUTH_INNER_BOTTOM_3: 179,
+    FacialLandmarks.RIGHT_PUPIL: 468,
+    FacialLandmarks.LEFT_PUPIL: 473
+}
+
+ROS4HRI_LANDMARKS_N = 70
+
+def bound(val, min_val, max_val):
+    return max(min_val, min(val, max_val))
+
+@dataclass
+class Point:
+    x: int
+    y: int
+    image_width: InitVar(int)
+    image_height: InitVar(int)
+
+    def __post_init__(self, image_width, image_height):
+        self.x = bound(self.x, 0, image_width - 1)
+        self.y = bound(self.y, 0, image_height - 1)
+
+@dataclass
+class BoundingBox:
+    xmin: int
+    ymin: int
+    width: int
+    height: int
+    image_width: InitVar(int)
+    image_height: InitVar(int)
+
+    def __post_init__(self, image_width, image_height):
+        xmax = self.xmin + self.width
+        ymax = self.ymin + self.height
+        self.xmin = bound(self.xmin, 0, image_width - 1)
+        self.ymin = bound(self.ymin, 0, image_height - 1)
+        self.width = bound(xmax - self.xmin, 0, image_width - 1 - self.xmin)
+        self.height = bound(ymax - self.ymin, 0, image_height - 1 - self.ymin)
+    
+    def diag_length(self):
+        return math.dist((0, 0), (self.width, self.height))
+
+@dataclass
+class FaceDetection:
+    score: float
+    bb: BoundingBox
+    landmarks: Dict[int, Point]  # FacialLandmarks to Point
+
+    def __post_init__(self):
+        self.score = bound(self.score, 0., 1.)
+
+@dataclass
+class MeshDetection:
+    bb: BoundingBox
+    landmarks: Dict[int, Point]  # FacialLandmarks to Point
+
+def normalized_to_pixel_coordinates(
+    x_norm: float,
+    y_norm: float,
+    image_width: int,
+    image_height: int,
+):
+    x_px = bound(int(x_norm * image_width), 0, image_width - 1)
+    y_px = bound(int(y_norm * image_height), 0, image_height - 1)
+    return x_px, y_px
+
+def pixel_to_normalized_coordinates(
+    x_px: int,
+    y_px: int,
+    image_width: int,
+    image_height: int,
+):
+    x_norm = bound(x_px / image_width, 0., 1.)
+    y_norm = bound(y_px / image_height, 0., 1.)
+    return x_norm, y_norm
+
+def distance_rois(bb1, bb2):
+
+    x1, y1 = bb1.xmin + bb1.width / 2, bb1.ymin + bb1.height / 2
+    x2, y2 = bb2.xmin + bb2.width / 2, bb2.ymin + bb2.height / 2
+    return math.dist((x1, y1), (x2, y2))
+
+def bbs_match(bb1, bb2):
+
+    return (
+        distance_rois(bb1, bb2) / bb1.diag_length() < MAX_ROIS_REL_DISTANCE
+        and 1 / MAX_SCALING_ROIS < bb1.width / bb2.width < MAX_SCALING_ROIS
+        and 1 / MAX_SCALING_ROIS < bb1.height / bb2.height < MAX_SCALING_ROIS
+    )
+
+
+class Face:
+
+    last_id = 0
+
+    def __init__(self, deterministic_id = False, transform_listener = None, filtering_frame = None):
+
+        # generate unique ID
+        if deterministic_id:
+            self.id = "f%05d" % Face.last_id
+            Face.last_id = (Face.last_id + 1) % 10000
+        else:
+            self.id = "".join(
+                random.choices("abcdefghijklmnopqrstuvwxyz", k=5)
+            )  # for a 5 char long ID
+
+        self.initial_detection_time = None
+        self.nb_frames_visible = 0
+        self.nb_frames_since_last_detection = 0
+
+        self.score = 0.
+        self.bb = None  # BoundingBox in pixels
+        self.landmarks = {}  # FacialLandmarks to Point
+
+        self.filtering_frame = filtering_frame
+        self.head_transform = None
+        self.gaze_transform = None
+        self.one_euro_filters_xyz = [None]*3
+        self.one_euro_filter_quaternion = None
+        self.tl = transform_listener
+
+        self.roi_pub = None
+        self.cropped_pub = None
+        self.aligned_pub = None
+        self.landmarks_pub = None
+
+        # True once the publishers are initialised
+        self.ready = False
+        self.do_publish = False
+
+    def initialise_publishers(self):
+        """Initialises all the publishers for this face.
+
+        Not done in the constructor as we typically wait for a few frames
+        before publishing anything (to avoid creating too many spurious faces
+        due to detection noise).
+        """
+
+        # already initialised?
+        if self.ready:
+            return
+
+        self.roi_pub = rospy.Publisher(
+            "/humans/faces/%s/roi" % self.id,
+            NormalizedRegionOfInterest2D,
+            queue_size=1,
+        )
+
+        self.cropped_pub = rospy.Publisher(
+            "/humans/faces/%s/cropped" % self.id,
+            Image,
+            queue_size=1,
+        )
+
+        self.aligned_pub = rospy.Publisher(
+            "/humans/faces/%s/aligned" % self.id,
+            Image,
+            queue_size=1,
+        )
+
+        self.landmarks_pub = rospy.Publisher(
+            "/humans/faces/%s/landmarks" % self.id,
+            FacialLandmarks,
+            queue_size=1,
+        )
+
+        rospy.loginfo("New face: %s" % self)
+        self.ready = True
+
+    def publish(self, src_image, image_msg_header):
+
+        if not self.ready:
+            rospy.logerr(
+                "Trying to publish face information but publishers have not been created yet!"
+            )
+            return
+
+        self.publish_normalized_roi(src_image, image_msg_header)
+        self.publish_facial_landmarks(src_image, image_msg_header)
+        self.publish_cropped_face(src_image, image_msg_header)
+        self.publish_aligned_face(src_image, image_msg_header)
+
+    def publish_normalized_roi(self, src_image, image_msg_header):
+
+        img_height, img_width, _ = src_image.shape
+        msg = NormalizedRegionOfInterest2D()
+        msg.header = image_msg_header
+        msg.xmin, msg.ymin = pixel_to_normalized_coordinates(
+            self.bb.xmin, self.bb.ymin, img_width, img_height)
+        msg.xmax, msg.ymax = pixel_to_normalized_coordinates(
+            self.bb.xmin + self.bb.width, self.bb.ymin + self.bb.height, img_width, img_height)
+        msg.c = self.score
+        self.roi_pub.publish(msg)
+
+    def publish_facial_landmarks(self, src_image, image_msg_header):
+
+        img_height, img_width, _ = src_image.shape
+        msg = FacialLandmarks()
+        msg.header = image_msg_header
+        msg.landmarks = [NormalizedPointOfInterest2D() for _ in range(ROS4HRI_LANDMARKS_N)]
+        for idx, landmark in self.landmarks.items():
+            x, y = pixel_to_normalized_coordinates(landmark.x, landmark.y, img_width, img_height)
+            msg.landmarks[idx].x = x
+            msg.landmarks[idx].y = y
+            msg.landmarks[idx].c = self.score
+        msg.height = img_height
+        msg.width = img_width
+        self.landmarks_pub.publish(msg)
+
+    def publish_cropped_face(self, src_image, image_msg_header):
+
+        # no-one interested in the face image? skip it!
+        if self.cropped_pub.get_num_connections() == 0:
+            return
+
+        roi = src_image[
+            self.bb.ymin : self.bb.ymin + self.bb.height,
+            self.bb.xmin : self.bb.xmin + self.bb.width,
+        ]
+
+        sx = cropped_face_width * 1.0 / self.bb.width
+        sy = cropped_face_height * 1.0 / self.bb.height
+
+        scale = min(sx, sy)
+
+        scaled = cv2.resize(roi, None, fx=scale, fy=scale)
+        scaled_h, scaled_w = scaled.shape[:2]
+
+        output = np.zeros((cropped_face_width, cropped_face_height, 3), np.uint8)
+
+        x_offset = int((cropped_face_width - scaled_w) / 2)
+        y_offset = int((cropped_face_height - scaled_h) / 2)
+
+        output[y_offset : y_offset + scaled_h, x_offset : x_offset + scaled_w] = scaled
+
+        msg = CvBridge().cv2_to_imgmsg(output, encoding="bgr8")
+        msg.header = image_msg_header
+        self.cropped_pub.publish(msg)
+
+    def publish_aligned_face(self, src_image, image_msg_header):
+        """Aligns given face in img based on left and right eye coordinates.
+
+        This function is adapted from MIT-licensed DeepFace.
+        Author: serengil
+        Original source: https://github.com/serengil/deepface/blob/f07f278/deepface/detectors/FaceDetector.py#L68
+        """
+
+        # no-one interested in the face image? skip it!
+        if self.aligned_pub.get_num_connections() == 0:
+            return
+
+        img_height, img_width, _ = src_image.shape
+        x, y, w, h = self.bb.xmin, self.bb.ymin, self.bb.width, self.bb.height
+
+        # expand the ROI a little to ensure the rotation does not introduce black zones
+        xm1 = max(0, x - w // 2)
+        xm2 = min(x + w + w // 2, img_width)
+        ym1 = max(0, y - h // 2)
+        ym2 = min(y + h + h // 2, img_height)
+        preroi = src_image[ym1:ym2, xm1:xm2]
+
+        left_eye = self.landmarks[FacialLandmarks.LEFT_PUPIL]
+        right_eye = self.landmarks[FacialLandmarks.RIGHT_PUPIL]
+
+        # -----------------------
+        # find rotation direction
+
+        if left_eye.y > right_eye.y:
+            point_3rd = (right_eye.x, left_eye.y)
+            direction = -1  # rotate same direction to clock
+        else:
+            point_3rd = (left_eye.x, right_eye.y)
+            direction = 1  # rotate inverse direction of clock
+
+        # find length of triangle edges
+        a = math.dist(astuple(left_eye), point_3rd)
+        b = math.dist(astuple(right_eye), point_3rd)
+        c = math.dist(astuple(right_eye), astuple(left_eye))
+
+        # apply cosine rule
+        if b != 0 and c != 0:
+
+            cos_a = (b * b + c * c - a * a) / (2 * b * c)
+            angle = np.arccos(cos_a)  # angle in radian
+            angle = (angle * 180) / math.pi  # radian to degree
+
+            # rotate base image
+
+            if direction == -1:
+                angle = 90 - angle
+
+            img = PILImage.fromarray(preroi)  # convert to a PIL image to rotate it
+            preroi = np.array(img.rotate(-direction * angle, PILImage.BILINEAR))
+
+        roi = preroi[y - ym1 : y - ym1 + h, x - xm1 : x - xm1 + w]
+
+        sx = cropped_face_width * 1.0 / w
+        sy = cropped_face_height * 1.0 / h
+
+        scale = min(sx, sy)
+
+        scaled = cv2.resize(roi, None, fx=scale, fy=scale)
+        scaled_h, scaled_w = scaled.shape[:2]
+
+        output = np.zeros((cropped_face_width, cropped_face_height, 3), np.uint8)
+
+        x_offset = int((cropped_face_width - scaled_w) / 2)
+        y_offset = int((cropped_face_height - scaled_h) / 2)
+
+        output[y_offset : y_offset + scaled_h, x_offset : x_offset + scaled_w] = scaled
+
+        msg = CvBridge().cv2_to_imgmsg(output, encoding="bgr8")
+        msg.header = image_msg_header
+        self.aligned_pub.publish(msg)
+
+    def compute_6d_pose(self, K, camera_optical_frame):
+
+        # use the face mesh landmarks to compute the pose if all the necessary ones are found,
+        # otherwise use the ones extracted by the face detector which are guaranteed
+        landmarks_2d_to_3d = {
+            FacialLandmarks.RIGHT_PUPIL: P3D_RIGHT_EYE,
+            FacialLandmarks.LEFT_PUPIL: P3D_LEFT_EYE,
+            FacialLandmarks.RIGHT_EAR: P3D_RIGHT_EAR,
+            FacialLandmarks.LEFT_EAR: P3D_LEFT_EAR,
+            FacialLandmarks.NOSE: P3D_NOSE,
+            FacialLandmarks.MOUTH_INNER_TOP_2: P3D_STOMION
+        }
+        
+        if all(lm_key in self.landmarks for lm_key in landmarks_2d_to_3d.keys()):
+            points_2D = np.array(
+                [astuple(self.landmarks[lm_key]) for lm_key in landmarks_2d_to_3d.keys()],
+                dtype="double"
+            )
+            points_3D = np.array(list(landmarks_2d_to_3d.values()))
+        else:
+            # compute stomion from average of left and right mouth
+            mouth_right = self.landmarks[FacialLandmarks.MOUTH_OUTER_RIGHT]
+            mouth_left = self.landmarks[FacialLandmarks.MOUTH_OUTER_LEFT]
+            landmark_stomion = (
+                (mouth_right.x + mouth_left.x) / 2,
+                (mouth_right.y + mouth_left.y) / 2
+            )
+            points_2D = np.array(
+                [
+                    astuple(self.landmarks[FacialLandmarks.RIGHT_PUPIL]),
+                    astuple(self.landmarks[FacialLandmarks.LEFT_PUPIL]),
+                    astuple(self.landmarks[FacialLandmarks.NOSE]),
+                    landmark_stomion
+                ], dtype="double"
+            )
+            points_3D = np.array([
+                P3D_RIGHT_EYE,
+                P3D_LEFT_EYE,
+                P3D_NOSE,
+                P3D_STOMION
+            ])
+
+        trans_vec, angles = face_pose_estimation(points_2D, points_3D, K)
+        angles = np.array(angles)
+        angles /= (180/np.pi)
+        angles_quaternion = tf.transformations.quaternion_from_euler(*angles)
+
+        if self.tl and self.filtering_frame:
+            point_trans_vec = PointStamped()
+            point_trans_vec.point.x = trans_vec[0] / 1000
+            point_trans_vec.point.y = trans_vec[1] / 1000
+            point_trans_vec.point.z = trans_vec[2] / 1000
+
+            point_trans_vec.header.frame_id = camera_optical_frame
+            point_trans_vec.header.stamp = rospy.Time(0.0)
+
+            try:
+                point_trans_vec = self.tl.transformPoint(self.filtering_frame,
+                                                         point_trans_vec)
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                rospy.logerr("An error occured while"+\
+                             "transforming from frame %s to frame %s"\
+                             % (camera_optical_frame, self.filtering_frame))
+
+            trans_vec[0] = point_trans_vec.point.x * 1000
+            trans_vec[1] = point_trans_vec.point.y * 1000
+            trans_vec[2] = point_trans_vec.point.z * 1000
+
+        current_time = rospy.Time.now().to_sec()
+
+        if not self.one_euro_filters_xyz[0]:
+            self.one_euro_filters_xyz[0] = OneEuroFilter(
+                current_time, 
+                trans_vec[0] / 1000, 
+                beta=BETA_POSITION, 
+                d_cutoff=D_CUTOFF_POSITION, 
+                min_cutoff=MIN_CUTOFF_POSITION)
+            self.one_euro_filters_xyz[1] = OneEuroFilter(
+                current_time, 
+                trans_vec[1] / 1000, 
+                beta=BETA_POSITION, 
+                d_cutoff=D_CUTOFF_POSITION, 
+                min_cutoff=MIN_CUTOFF_POSITION)
+            self.one_euro_filters_xyz[2] = OneEuroFilter(
+                current_time, 
+                trans_vec[2] / 1000, 
+                beta=BETA_POSITION, 
+                d_cutoff=D_CUTOFF_POSITION, 
+                min_cutoff=MIN_CUTOFF_POSITION)
+        else:
+            trans_vec[0] = self.one_euro_filters_xyz[0](
+                current_time,
+                trans_vec[0] / 1000)[0] * 1000
+            trans_vec[1] = self.one_euro_filters_xyz[1](
+                current_time,
+                trans_vec[1] / 1000)[0] * 1000
+            trans_vec[2] = self.one_euro_filters_xyz[2](
+                current_time,
+                trans_vec[2] / 1000)[0] * 1000
+
+        if not self.one_euro_filter_quaternion:
+            self.one_euro_filter_quaternion = QuatOneEuroFilter(
+                current_time, 
+                angles_quaternion, 
+                beta=BETA_QUATERNION,
+                min_cutoff=MIN_CUTOFF_POSITION)
+        else:
+            angles_quaternion = self.one_euro_filter_quaternion(
+                current_time,
+                angles_quaternion)    
+
+        if self.tl and self.filtering_frame:
+            point_trans_vec = PointStamped()
+            point_trans_vec.point.x = trans_vec[0] / 1000
+            point_trans_vec.point.y = trans_vec[1] / 1000
+            point_trans_vec.point.z = trans_vec[2] / 1000
+
+            point_trans_vec.header.frame_id = self.filtering_frame
+            point_trans_vec.header.stamp = rospy.Time(0.0)
+
+            try:
+                point_trans_vec = self.tl.transformPoint(camera_optical_frame, point_trans_vec)
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                rospy.logerr("An error occured while"+\
+                             "transforming from frame %s to frame %s"\
+                             % (self.filtering_frame, camera_optical_frame))
+
+            trans_vec[0] = point_trans_vec.point.x * 1000
+            trans_vec[1] = point_trans_vec.point.y * 1000
+            trans_vec[2] = point_trans_vec.point.z * 1000       
+
+        # calculating angle
+        self.head_transform = TransformStamped(
+            Header(0, rospy.Time.now(), camera_optical_frame),
+            "face_" + self.id,
+            Transform(
+                Vector3(
+                    trans_vec[0] / 1000,
+                    trans_vec[1] / 1000,
+                    trans_vec[2] / 1000,
+                ),
+                Quaternion(
+                    *angles_quaternion
+                ),
+            ),
+        )
+
+        self.gaze_transform = TransformStamped(
+            Header(0, rospy.Time.now(), "face_" + self.id),
+            "gaze_" + self.id,
+            Transform(
+                Vector3(0, 0, 0),
+                Quaternion(
+                    *tf.transformations.quaternion_from_euler(-np.pi / 2, 0, -np.pi / 2)
+                ),
+            ),
+        )
+
+    def delete(self):
+
+        if not self.ready:
+            return
+
+        rospy.loginfo(
+            "Face [%s] lost. It remained visible for %0.2fs"
+            % (self, (rospy.Time.now() - self.initial_detection_time).to_sec())
+        )
+
+        self.roi_pub.unregister()
+        self.cropped_pub.unregister()
+        self.aligned_pub.unregister()
+
+        self.ready = False
+
+    def __repr__(self):
+        return self.id
+
+
+class FaceDetector:
+
+    def __init__(self, confidence_threshold, image_scale):
+
+        self.confidence_threshold = confidence_threshold
+        self.image_scale = image_scale
+        self.detector = YuNetDetector()
+
+    @staticmethod
+    def _extract_face_detection(raw_detection, scale, image_width, image_height):
+
+        score = float(raw_detection[0]) / 100.
+
+        scaled_raw_coords = [int(x*scale) for x in raw_detection[1:15]]
+
+        bb = BoundingBox(*scaled_raw_coords[0:4], image_width, image_height)
+
+        landmarks = {}
+        landmarks[FacialLandmarks.RIGHT_PUPIL] = Point(*scaled_raw_coords[4:6], image_width, image_height)
+        landmarks[FacialLandmarks.LEFT_PUPIL] = Point(*scaled_raw_coords[6:8], image_width, image_height)
+        landmarks[FacialLandmarks.NOSE] = Point(*scaled_raw_coords[8:10], image_width, image_height)
+        landmarks[FacialLandmarks.MOUTH_OUTER_RIGHT] = Point(*scaled_raw_coords[10:12], image_width, image_height)
+        landmarks[FacialLandmarks.MOUTH_OUTER_LEFT] = Point(*scaled_raw_coords[12:14], image_width, image_height)
+
+        return FaceDetection(score, bb, landmarks)
+
+    def detect(self, img):
+
+        img_height, img_width, _ = img.shape
+
+        scaled_img = cv2.resize(
+            img,
+            None,
+            fx=self.image_scale,
+            fy=self.image_scale,
+            interpolation=cv2.INTER_AREA
+        )
+        scaled_img_height, scaled_img_width, _  = scaled_img.shape
+
+        raw_face_detections = self.detector.detect(
+            scaled_img,
+            scaled_img_width,
+            scaled_img_height,
+            scaled_img.strides[0]
+        )
+        face_detections = [
+            self._extract_face_detection(d, 1./self.image_scale, img_width, img_height)
+            for d in raw_face_detections
+        ]
+        valid_face_detections = [
+            d for d in face_detections
+            if d.score > self.confidence_threshold and d.bb.width > 0 and d.bb.height > 0
+        ]
+
+        return valid_face_detections
+
+class MeshDetector:
+
+    def __init__(self):
+
+        self.detector = FaceMesh(
+            static_image_mode=False,
+            max_num_faces=MAX_FACE_MASH_N,
+            refine_landmarks=True,
+        )
+    
+    @staticmethod
+    def _extract_mesh_detection(raw_landmarks, image_width, image_height):
+
+        landmarks = {}
+        xmin = image_width - 1
+        ymin = image_height - 1
+        xmax = 0
+        ymax = 0
+
+        for ros4hri_idx, mp_idx in ros4hri_to_mp_landmarks_mapping.items():
+            landmark_norm = raw_landmarks.landmark[mp_idx]
+            x, y = normalized_to_pixel_coordinates(
+                landmark_norm.x, landmark_norm.y, image_width, image_height
+            )
+            landmarks[ros4hri_idx] = Point(x, y, image_width, image_height)
+            xmin = min(x, xmin)
+            ymin = min(y, ymin)
+            xmax = max(x, xmax)
+            ymax = max(y, ymax)
+
+        bb = BoundingBox(xmin, ymin, xmax - xmin, ymax - ymin, image_width, image_height)
+
+        return MeshDetection(bb, landmarks)
+
+    def detect(self, img):
+
+        img_height, img_width, _ = img.shape
+
+        mesh_detections = []
+        mesh_results = self.detector.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        if mesh_results.multi_face_landmarks:
+            mesh_detections = [
+                self._extract_mesh_detection(raw_landmarks, img_width, img_height)
+                for raw_landmarks in mesh_results.multi_face_landmarks
+            ]
+
+        return mesh_detections
+
+class RosFaceDetector:
+
+    def __init__(self):
+
+        processing_rate = rospy.get_param("~processing_rate", 30)
+        confidence_threshold = rospy.get_param("~confidence_threshold", 0.75)
+        image_scale = rospy.get_param("~image_scale", 0.5)
+        face_mesh = rospy.get_param("~face_mesh", True)
+
+        self.filtering_frame = rospy.get_param("~filtering_frame", "camera_color_optical_frame")
+        self.deterministic_ids = rospy.get_param("~deterministic_ids", False)
+        self.debug = rospy.get_param("~debug", False)
+
+        rospy.loginfo("filtering frame: %s. Before filtering the face position,\
+                    the raw estimation will be transformed into this frame."\
+                    % self.filtering_frame)
+
+        self.image = None
+        self.image_msg_header = None
+        self.new_image = False
+        self.image_lock = Lock()
+        self.skipped_images = 0
+        self.last_id = 0
+        # list (map track ID -> Face) of Face instances, corresponding to the currently tracked faces
+        self.knownFaces = {}
+
+        self.proc_timer = rospy.Timer(rospy.Duration.from_sec(1/processing_rate), self.process_image)
+        self.proc_lock = Lock()
+        self.start_skipping_ts = rospy.Time.now()
+        self.detection_start_proc_time = rospy.Time().now()
+        self.detection_proc_duration = 0
+
+        self.is_shutting_down = False
+        self.filtering_frame_to_validate = True
+
+        self.tl = tf.TransformListener()
+        self.tb = tf.TransformBroadcaster()
+
+        self.face_detector = FaceDetector(confidence_threshold, image_scale)
+        self.mesh_detector = MeshDetector() if face_mesh else None
+
+        semaphore_pub = rospy.Publisher(
+            "/hri_face_detect/ready", Empty, queue_size=1, latch=True
+        )
+        self.faces_pub = rospy.Publisher("/humans/faces/tracked", IdsList, queue_size=1)
+
+        self.image_sub = rospy.Subscriber("image", Image, self.image_callback, queue_size=1)
+        self.image_info_sub = rospy.Subscriber(
+            "camera_info", CameraInfo, self.info_callback, queue_size=1
+        )
+
+        self.diag_timer = rospy.Timer(rospy.Duration(1/DIAG_PUB_RATE), self.do_diagnostics)
+        self.diag_pub = rospy.Publisher("/diagnostics", DiagnosticArray, queue_size=1)
+        rospy.loginfo(
+            "Ready. Waiting for images to be published on %s." % self.image_sub.name
+        )
+
+        semaphore_pub.publish(Empty())
+
+    def do_diagnostics(self, event=None):
+        arr = DiagnosticArray()
+        arr.header.stamp = rospy.Time.now()
+
+        msg = DiagnosticStatus(name="Social perception: Face analysis: Detection", hardware_id="none")
+                               
+        if ((rospy.Time.now() - self.detection_start_proc_time).to_sec() > FACE_DETECTION_PROC_TIME_ERROR and
+                self.image_lock.locked()):
+            msg.level = DiagnosticStatus.ERROR
+            msg.message = "Face detection process not responding"
+        elif self.detection_proc_duration > FACE_DETECTION_PROC_TIME_WARN:
+            msg.level = DiagnosticStatus.WARN
+            msg.message = "Face detection processing is slow"
+        else:
+            msg.level = DiagnosticStatus.OK
+
+        msg.values = [
+            KeyValue(key="Package name", value='hri_face_detect'),
+            KeyValue(key="Currently detected faces", value=str(len(self.knownFaces))),
+            KeyValue(key="Last detected face ID", value=str(self.last_id)),
+            KeyValue(key="Detection processing time",
+                     value="{:.2f}".format(self.detection_proc_duration * 1000) + "ms"),
+        ]
+
+        arr.status = [msg]
+        self.diag_pub.publish(arr)
+
+    def info_callback(self, msg):
+
+        if not hasattr(self, "msg"):
+            self.msg = msg
+
+            self.K = np.zeros((3, 3), np.float32)
+            self.K[0][0:3] = self.msg.K[0:3]
+            self.K[1][0:3] = self.msg.K[3:6]
+            self.K[2][0:3] = self.msg.K[6:9]
+
+    def image_callback(self, msg):
+
+        with self.image_lock:
+            self.image = CvBridge().imgmsg_to_cv2(msg, desired_encoding="bgr8")
+            self.image_msg_header = msg.header
+
+            if self.new_image:
+                self.skipped_images += 1
+                if self.skipped_images > 100:
+                    rospy.logwarn("face_detect's processing too slow. Skipped 100 new incoming image over the last %.1fsecs" % (rospy.Time.now()-self.start_skipping_ts).to_sec())
+                    self.start_skipping_ts = rospy.Time.now()
+                    self.skipped_images = 0
+            self.new_image = True
+
+    def process_image(self, _):
+
+        if self.is_shutting_down or not self.new_image:
+            return
+        
+        if not self.proc_lock.acquire(blocking=False):
+            return
+
+        with self.image_lock:
+            self.detection_start_proc_time = rospy.Time.now()
+            image = deepcopy(self.image)
+            image_msg_header = deepcopy(self.image_msg_header)
+            self.new_image = False
+        
+        if self.filtering_frame_to_validate and self.filtering_frame:
+            self.filtering_frame_to_validate = False
+            try: 
+                self.tl.lookupTransform(self.filtering_frame,
+                                        image_msg_header.frame_id,
+                                        rospy.Time(0.0))
+            except tf.LookupException:
+                rospy.logerr("The filtering_frame does not seem to belong to the same tree"+\
+                              "of the camera optical frame. Filtering will be perfomed using the "+\
+                              "camera optical frame: %s" % image_msg_header.frame_id)
+                self.filtering_frame = None
+
+        self.detection_start_proc_time = rospy.Time.now()
+
+        # copy the list of face ID before iterating over detection, so that we
+        # can delete non-existant faces at the end.
+        knownIds = list(self.knownFaces.keys())
+
+        face_detections = self.face_detector.detect(image)
+
+        # run fase mesh detection only if it is enabled, at least one face is detected and it is sufficiently big
+        if (
+            self.mesh_detector
+            and len(face_detections)
+            and any((d.bb.width * d.bb.height) / (image.shape[0] * image.shape[1]) > MIN_FACE_IMAGE_FRAC_FOR_MESH
+                    for d in face_detections)
+        ):
+            mesh_detections = self.mesh_detector.detect(image)
+
+            if len(face_detections) and len(mesh_detections):
+                # find best association between faces and meshes using as cost the bounding boxes distances.
+                # in the cost matrix the rows are ordered by face detection and columns by meshes.
+                cost_matrix = np.array([
+                    [distance_rois(fd.bb, md.bb) for md in mesh_detections]
+                    for fd in face_detections
+                ])
+                fd_indices, md_indices = linear_sum_assignment(cost_matrix)
+                for fd_idx, md_idx in zip(fd_indices, md_indices):
+                    # substitute the landmarks of the matching face detections with the mesh detection ones
+                    face_detections[fd_idx].landmarks = mesh_detections[md_idx].landmarks
+
+        currentIds = []
+
+        for detection in face_detections:
+
+            # have we seen this face before? -> check based on whether or not
+            # bounding boxes overlaps
+            face = next(
+                (face for face in self.knownFaces.values() if bbs_match(face.bb, detection.bb)),
+                None
+            )
+
+            if not face:
+                face = Face(self.deterministic_ids, self.tl, self.filtering_frame)
+                face.initial_detection_time = rospy.Time.now()
+                self.knownFaces[face.id] = face
+                self.last_id = face.id
+
+            currentIds.append(face.id)
+
+            # update the face with its current position and landmarks
+            face.score = detection.score
+            face.bb = detection.bb
+            face.landmarks = detection.landmarks
+
+            face.nb_frames_visible += 1
+            face.do_publish = True
+
+            # if it is a 3nd frame, we create all the required publishers.
+            if face.nb_frames_visible == MIN_FRAMES_FACE_TRACKING:
+                face.initialise_publishers()
+
+        # iterate over faces not seen anymore,
+        # and unregister corresponding publishers
+        for id in knownIds:
+            if id not in currentIds:
+                face = self.knownFaces[id]
+                face.nb_frames_since_last_detection += 1
+                face.do_publish = False
+                if face.nb_frames_since_last_detection > MAX_FRAMES_FACE_RETENTION:
+                    face.delete()
+                    del self.knownFaces[id]
+
+        for id in currentIds:
+            face = self.knownFaces[id]
+            if face.ready and face.do_publish and not self.is_shutting_down:
+                face.publish(image, image_msg_header)
+                if hasattr(self, "K"):
+                    face.compute_6d_pose(self.K, image_msg_header.frame_id)
+                    self.tb.sendTransformMessage(face.head_transform)
+                    self.tb.sendTransformMessage(face.gaze_transform)
+
+        self.detection_proc_duration = (rospy.Time.now() - self.detection_start_proc_time).to_sec()
+
+        self.faces_pub.publish(
+            IdsList(
+                image_msg_header,
+                [face.id for face in self.knownFaces.values() if face.ready],
+            )
+        )
+
+        if self.debug:
+            # Draw the face detection annotations on the image.
+            image.flags.writeable = True
+            rospy.loginfo(f"{len(currentIds)} faces detected, {len(self.knownFaces)} faces tracked")
+            for id in currentIds:
+                face = self.knownFaces[id]
+                if not face.ready:
+                    continue
+                cv2.rectangle(
+                    image,
+                    (face.bb.xmin, face.bb.ymin),
+                    (
+                        face.bb.xmin + face.bb.width,
+                        face.bb.ymin + face.bb.height,
+                    ),
+                    (255, 255, 0),
+                    2,
+                )
+                cv2.putText(
+                    image,
+                    f"{face.id}, {face.score}",
+                    (face.bb.xmin, face.bb.ymin),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (255, 0, 0),
+                )
+                for landmark in face.landmarks.values():
+                    cv2.circle(
+                        image,
+                        (landmark.x, landmark.y),
+                        2,
+                        (0, 255, 255),
+                        cv2.FILLED
+                    )
+
+            cv2.imshow("Face Detection", image)
+            cv2.waitKey(5)
+
+        self.proc_lock.release()
+
+    def close(self):
+
+        rospy.loginfo("Stopping face publishing...")
+
+        self.is_shutting_down = True
+
+        for _, face in self.knownFaces.items():
+            face.delete()
+
+        h = Header()
+        h.stamp = rospy.Time.now()
+        self.faces_pub.publish(IdsList(h, []))
+
+        rospy.loginfo("Stopped publishing faces.")
+
+        rospy.sleep(
+            0.1
+        )  # ensure the last messages published in this method (detector.close) are effectively sent.
+
+
+if __name__ == "__main__":
+    rospy.init_node("hri_face_detect")
+    cropped_face_width = rospy.get_param("/humans/faces/width", cropped_face_width)
+    cropped_face_height = rospy.get_param("/humans/faces/height", cropped_face_height)
+    detector = RosFaceDetector()
+    rospy.on_shutdown(detector.close)
+    rospy.spin()

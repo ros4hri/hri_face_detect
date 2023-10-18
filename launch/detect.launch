@@ -1,22 +1,11 @@
 <launch>
 
-    <arg name="rgb_camera" default="/camera/color/"/>
-    <arg name="rgb_camera_topic" default="$(arg rgb_camera)/image_raw"/>
-    <arg name="rgb_camera_info" default="$(arg rgb_camera)/camera_info"/>
-
-    <arg name="face_mesh" default="True"/>
-    <arg name="max_num_faces" default="10"/>
-
-    <!-- The filtering_frame parameter defines in which frame the estimated face pose should be 
-         transformed before performing the filtering operations.
-         Due to the proxemity between the camera frame and the detected faces, and considering that cameras can be mounted
-         on frequently moving robot's components (e.g., robot's head), directly filtering a face pose expressed in 
-         camera optical frame might reduce the filtering quality.  -->
+    <arg name="rgb_camera" default="/camera/color/" doc="The input camera namespace"/>
+    <arg name="rgb_camera_topic" default="$(arg rgb_camera)/image_raw" doc="The input camera image topic"/>
+    <arg name="rgb_camera_info" default="$(arg rgb_camera)/camera_info" doc="The input camera info topic"/>
     <arg name="filtering_frame" default="camera_color_optical_frame" doc="The frame where the face pose filtering will take place"/>
 
     <node pkg="hri_face_detect" name="hri_face_detect" type="detect" output="screen">
-        <param name="face_mesh" value="$(arg face_mesh)"/>
-        <param name="max_num_faces" value="$(arg max_num_faces)"/>
         <param name="filtering_frame" value="$(arg filtering_frame)"/>
         <remap from="image" to="$(arg rgb_camera_topic)"/>
         <remap from="camera_info" to="$(arg rgb_camera_info)"/>
