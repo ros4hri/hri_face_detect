@@ -2,6 +2,19 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* change detector to Yunet
+  - large refactor
+  - remove record node
+  - use timer based logic to process the most recent image only
+  - add Yunet detector as standalone C library
+  - add Yunet python bindings
+  - use Yunet as always on detector
+  - use Mediapipe face mesh detector to refine near faces
+  - update documentation
+* Contributors: Luka Juricic
+
 1.4.9 (2023-07-05)
 ------------------
 * change RoI message type to hri_msgs/NormalizedRegionOfInterest2D
