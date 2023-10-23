@@ -8,9 +8,12 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Transform, TransformStamped, Vector3, Quaternion, PointStamped
 from hri_face_detect.face_pose_estimation import face_pose_estimation
 from hri_face_detect.one_euro_filter import OneEuroFilter, QuatOneEuroFilter
-from hri_msgs.msg import FacialLandmarks, IdsList, NormalizedPointOfInterest2D, NormalizedRegionOfInterest2D
+from hri_msgs.msg import FacialLandmarks, IdsList, NormalizedPointOfInterest2D, NormalizedRegionOfInterest2D, FacialActionUnits
 import math
-from mediapipe.python.solutions.face_mesh import FaceMesh
+# from mediapipe.python.solutions.face_mesh import FaceMesh
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+
 import numpy as np
 from PIL import Image as PILImage
 import random
@@ -148,6 +151,40 @@ ros4hri_to_mp_landmarks_mapping = {
     FacialLandmarks.LEFT_PUPIL: 473
 }
 
+ros4hri_to_mp_blendshapes_mapping = {
+    'INNER_BROW_RAISER': 'browInnerUp',
+    'OUTER_BROW_RAISER': ['browOuterUpRight', 'browOuterUpLe'],
+    'BROW_LOWERER': ['browDownRight', 'browDownLe'],
+    'UPPER_LID_RAISER': ['eyeLookUpRight', 'eyeLookUpLe'],
+    'CHEEK_RAISER': 'cheekPu',
+    'LID_TIGHTENER': ['eyeSquintRight', 'eyeSquintLe'],
+    'LIPS_TOWARD_EACH_OTHER': 'mouthPucker',
+    'NOSE_WRINKLER': ['noseSneerRight', 'noseSneerLe'],
+    'UPPER_LIP_RAISER': ['mouthUpperUpRight', 'mouthUpperUpLe'],
+    'NASOLABIAL_DEEPENER': None,
+    'LIP_CORNER_PULLER': ['mouthSmileRight', 'mouthSmileLe'],
+    'SHARP_LIP_PULLER': None,
+    'DIMPLER': ['mouthDimpleRight', 'mouthDimpleLe'],
+    'LIP_CORNER_DEPRESSOR': ['mouthFrownRight', 'mouthFrownLe'],
+    'LOWER_LIP_DEPRESSOR': ['mouthLowerDownRight', 'mouthLowerDownLe'],
+    'CHIN_RAISER': 'jawOpen',
+    'LIP_PUCKER': 'mouthPucker',
+    'TONGUE_SHOW': 'tongueOut',
+    'LIP_STRETCHER': ['mouthStretchRight', 'mouthStretchLe'],
+    'NECK_TIGHTENER': None,
+    'LIP_FUNNELER': 'mouthFunnel',
+    'LIP_TIGHTENER': ['mouthPressRight', 'mouthPressLe'],
+    'LIPS_PART': 'mouthOpen',
+    'JAW_DROP': 'jawOpen',
+    'MOUTH_STRETCH': ['mouthStretchRight', 'mouthStretchLe'],
+    'LIP_SUCK': None,
+    'EYES_TURN_LEFT': 'eyeLookInLe',
+    'EYES_TURN_RIGHT': 'eyeLookInRight',
+    'EYES_UP': 'eyeLookUpLe',
+    'EYES_DOWN': 'eyeLookDownLe',
+}
+
+
 ROS4HRI_LANDMARKS_N = 70
 
 def bound(val, min_val, max_val):
@@ -189,6 +226,8 @@ class FaceDetection:
     score: float
     bb: BoundingBox
     landmarks: Dict[int, Point]  # FacialLandmarks to Point
+    # add blendshphapes
+    blendshapes: Dict[str, float]  # FacialActionUnits to float
 
     def __post_init__(self):
         self.score = bound(self.score, 0., 1.)
@@ -695,11 +734,12 @@ class MeshDetector:
 
     def __init__(self):
 
-        self.detector = FaceMesh(
-            static_image_mode=False,
-            max_num_faces=MAX_FACE_MASH_N,
-            refine_landmarks=True,
-        )
+        base_options = python.BaseOptions(model_asset_path='face_landmarker.task')
+        options = vision.FaceLandmarkerOptions(base_options=base_options,
+                                            output_face_blendshapes=True,
+                                            output_facial_transformation_matrixes=True,
+                                            num_faces=MAX_FACE_MASH_N)
+        self.detector = vision.FaceLandmarker.create_from_options(options)
     
     @staticmethod
     def _extract_mesh_detection(raw_landmarks, image_width, image_height):
@@ -736,8 +776,14 @@ class MeshDetector:
                 self._extract_mesh_detection(raw_landmarks, img_width, img_height)
                 for raw_landmarks in mesh_results.multi_face_landmarks
             ]
+        # add blendshapes to the detections 
+        blendshapes_results = mesh_results.face_blendshapes
 
-        return mesh_detections
+        categories = blendshapes_results.face_blendshapes[0]
+
+        blendshapes_detections = categories if categories else None
+
+        return mesh_detections, blendshapes_detections
 
 class RosFaceDetector:
 
@@ -890,7 +936,7 @@ class RosFaceDetector:
             and any((d.bb.width * d.bb.height) / (image.shape[0] * image.shape[1]) > MIN_FACE_IMAGE_FRAC_FOR_MESH
                     for d in face_detections)
         ):
-            mesh_detections = self.mesh_detector.detect(image)
+            mesh_detections, blendshapes_detections = self.mesh_detector.detect(image)
 
             if len(face_detections) and len(mesh_detections):
                 # find best association between faces and meshes using as cost the bounding boxes distances.
