@@ -1,6 +1,20 @@
 cmake_minimum_required(VERSION 3.8)
 project(hri_face_detect)
 
+# build the face detection library as a shared library
+include(ExternalProject)
+externalproject_add(libfacedetection
+  SOURCE_DIR ${CMAKE_SOURCE_DIR}/libfacedetection
+  INSTALL_DIR "${CMAKE_INSTALL_PREFIX}"
+  CMAKE_ARGS
+    -DDEMO=OFF
+    -DBUILD_SHARED_LIBS=ON
+    -DUSE_OPENMP=OFF
+    -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+  BUILD_BYPRODUCTS
+    <INSTALL_DIR>/lib/libfacedetection.so
+)
+
 # configure the ROS package
 find_package(catkin REQUIRED
   COMPONENTS pybind11_catkin
@@ -20,17 +34,8 @@ catkin_package(
     sensor_msgs
     std_msgs
     tf
-)
-
-# build the face detection library as a shared library
-include(ExternalProject)
-externalproject_add(libfacedetection
-  SOURCE_DIR ${CMAKE_SOURCE_DIR}/libfacedetection
-  CMAKE_ARGS
-    -DDEMO=OFF
-    -DBUILD_SHARED_LIBS=ON
-    -DUSE_OPENMP=OFF
-    -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX}
+  LIBRARIES
+    libfacedetection
 )
 
 # build the python bindings to the face detection library
