@@ -2,6 +2,11 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* fix library external project dependency
+* Contributors: Luka Juricic
+
 1.5.0 (2023-10-18)
 ------------------
 * change detector to Yunet
