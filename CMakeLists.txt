@@ -31,6 +31,7 @@ catkin_package(
     python3-opencv
     python3-pil
     python3-scipy
+    python3-tk
     rospy
     sensor_msgs
     std_msgs
