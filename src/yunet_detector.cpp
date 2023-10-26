@@ -5,7 +5,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "facedetection/facedetectcnn.h"
+#include "facedetectcnn.h"
 
 // define the result_buffer_ size. Do not change the size!
 #define DETECT_BUFFER_SIZE 0x9000
