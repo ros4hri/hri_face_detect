@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.5.2 (2023-10-27)
+------------------
 * port facedetection external cmake to project one
 * add tkinter dependency
 * Contributors: Luka Juricic
