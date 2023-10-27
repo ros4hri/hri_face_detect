@@ -40,50 +40,16 @@ catkin_package(
 #     <INSTALL_DIR>/lib/libfacedetection.so
 #     <INSTALL_DIR>/lib/libfacedetection.so.v0.0.3
 # )
-
-# # build the python bindings to the face detection library
-# set(PYBIND11_FINDPYTHON ON)
-# find_package(pybind11 CONFIG)
-# pybind11_add_module(yunet_detector src/yunet_detector.cpp)
-# add_dependencies(yunet_detector libfacedetection)
-# target_include_directories(yunet_detector PRIVATE
-#   ${PYBIND11_INCLUDE_DIRS}
-#   ${CATKIN_DEVEL_PREFIX}/include
-# )
-# target_link_libraries(yunet_detector PRIVATE
-#   ${CATKIN_DEVEL_PREFIX}/lib/libfacedetection.so
-# )
-
-# # install the face detection library
-# install(
-#   DIRECTORY ${CATKIN_DEVEL_PREFIX}/include/facedetection
-#   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-# )
-# install(
-#   FILES
-#     ${CATKIN_DEVEL_PREFIX}/lib/libfacedetection.so
-#     ${CATKIN_DEVEL_PREFIX}/lib/libfacedetection.so.v0.0.3
-#   DESTINATION DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-# )
-# install(
-#   TARGETS yunet_detector
-#   LIBRARY DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
-
-# # setup and install the ROS pyton package
-# catkin_python_setup()
-# catkin_install_python(
-#   PROGRAMS scripts/detect
-#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
-# install(
-#   DIRECTORY launch
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
-
 ### END OF OLD ATTEMPT
 
+#########################################################################################
+#########################################################################################
+
 ### YuNet face detection library
+
+# this part of the CMakeLists is based on the original YuNet library:
+# https://github.com/ShiqiYu/libfacedetection/blob/master/CMakeLists.txt
+
 option(ENABLE_AVX512 "use avx512" OFF)
 option(ENABLE_AVX2 "use avx2" ON)
 option(ENABLE_NEON "whether use neon, if use arm please set it on" OFF)
@@ -161,7 +127,11 @@ install(
   LIBRARY DESTINATION "${CATKIN_PACKAGE_LIB_DESTINATION}"
   PUBLIC_HEADER DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
 )
+
 ### End of YuNet face detection library
+
+#########################################################################################
+#########################################################################################
 
 # build the python bindings to the face detection library
 set(PYBIND11_FINDPYTHON ON)
