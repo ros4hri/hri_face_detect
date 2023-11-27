@@ -516,14 +516,15 @@ class Face:
             try:
                 point_trans_vec = self.tl.transformPoint(self.filtering_frame,
                                                          point_trans_vec)
-            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-                rospy.logerr("An error occured while"+\
-                             "transforming from frame %s to frame %s"\
-                             % (camera_optical_frame, self.filtering_frame))
+                trans_vec[0] = point_trans_vec.point.x * 1000
+                trans_vec[1] = point_trans_vec.point.y * 1000
+                trans_vec[2] = point_trans_vec.point.z * 1000
 
-            trans_vec[0] = point_trans_vec.point.x * 1000
-            trans_vec[1] = point_trans_vec.point.y * 1000
-            trans_vec[2] = point_trans_vec.point.z * 1000
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+                rospy.logwarn("Unable to transform from frame %s to filtering " \
+                        "frame %s (not the same tree?). Leaving the point in " \
+                        "its original frame. Original error was: %s" \
+                        % (camera_optical_frame, self.filtering_frame, e))
 
         current_time = rospy.Time.now().to_sec()
 
@@ -752,8 +753,8 @@ class RosFaceDetector:
         self.deterministic_ids = rospy.get_param("~deterministic_ids", False)
         self.debug = rospy.get_param("~debug", False)
 
-        rospy.loginfo("filtering frame: %s. Before filtering the face position,\
-                    the raw estimation will be transformed into this frame."\
+        rospy.loginfo("filtering frame: %s. Before filtering the face position, "\
+                    "the raw estimation will be transformed into this frame."\
                     % self.filtering_frame)
 
         self.image = None
@@ -772,7 +773,6 @@ class RosFaceDetector:
         self.detection_proc_duration = 0
 
         self.is_shutting_down = False
-        self.filtering_frame_to_validate = True
 
         self.tl = tf.TransformListener()
         self.tb = tf.TransformBroadcaster()
@@ -862,18 +862,6 @@ class RosFaceDetector:
             image = deepcopy(self.image)
             image_msg_header = deepcopy(self.image_msg_header)
             self.new_image = False
-        
-        if self.filtering_frame_to_validate and self.filtering_frame:
-            self.filtering_frame_to_validate = False
-            try: 
-                self.tl.lookupTransform(self.filtering_frame,
-                                        image_msg_header.frame_id,
-                                        rospy.Time(0.0))
-            except tf.LookupException:
-                rospy.logerr("The filtering_frame does not seem to belong to the same tree"+\
-                              "of the camera optical frame. Filtering will be perfomed using the "+\
-                              "camera optical frame: %s" % image_msg_header.frame_id)
-                self.filtering_frame = None
 
         self.detection_start_proc_time = rospy.Time.now()
 
