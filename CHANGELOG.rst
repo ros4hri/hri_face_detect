@@ -2,6 +2,17 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* rework filtering frame validation
+  Now, does not pre-validate the filtering frame: simply try to transform
+  to the filtering frame if it is provided, and continue without using
+  filtering frame if it is not available.
+  Helps in the case hri_face_detect starts before the robot's TF is fully
+  published -> the filtering will start in the correct frame as soon as it
+  become available.
+* Contributors: Séverin Lemaignan
+
 1.5.2 (2023-10-27)
 ------------------
 * port facedetection external cmake to project one
