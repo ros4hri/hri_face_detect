@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.5.3 (2023-11-27)
+------------------
 * rework filtering frame validation
   Now, does not pre-validate the filtering frame: simply try to transform
   to the filtering frame if it is provided, and continue without using
