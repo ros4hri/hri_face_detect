@@ -1,5 +1,48 @@
-// Auto generated data file
+// Copyright (c) 2023 PAL Robotics S.L. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Copyright (c) 2018-2023, Shiqi Yu, all rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+//    * Redistributions of source code must retain the above copyright
+//      notice, this list of conditions and the following disclaimer.
+//
+//    * Redistributions in binary form must reproduce the above copyright
+//      notice, this list of conditions and the following disclaimer in the
+//      documentation and/or other materials provided with the distribution.
+//
+//    * Neither the name of the {copyright_holder} nor the names of its
+//      contributors may be used to endorse or promote products derived from
+//      this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+
+// Copied and adapted from https://github.com/ShiqiYu/libfacedetection
+// Auto generated data file
+
 #include "facedetectcnn.h"
 
 float backbone__model0_pw_weight[16*32*1*1] = {0.00122f,0.00239f,0.00216f,-0.000522f,-0.000684f,-0.000736f,-0.000954f,-0.00216f,-0.002f,0.00161f,0.0028f,0.00249f,-0.00101f,-0.00134f,-0.00135f,-0.00173f,-0.00327f,-0.00285f,0.000681f,0.00167f,0.00173f,-0.000645f,-0.000979f,-0.00069f,0.00197f,0.00065f,0.00131f,0.f,0.f,0.f,0.f,0.f,-0.000824f,-0.000333f,0.000789f,-0.000837f,-0.000305f,0.000751f,-0.000499f,-0.000182f,0.000651f,-0.000318f,0.000213f,0.00169f,-0.000913f,-0.000345f,0.00107f,-0.00021f,0.000193f,0.00138f,-0.000765f,-0.000598f,0.000856f,-0.00168f,-0.00147f,-0.00012f,-0.000548f,-0.000455f,0.000664f,0.f,0.f,0.f,0.f,0.f,0.000267f,0.000202f,-0.00129f,0.000959f,0.00074f,-0.000962f,0.000595f,0.000413f,-0.00122f,0.000586f,0.000369f,-0.00127f,0.00123f,0.000849f,-0.00101f,0.000819f,0.000482f,-0.00131f,0.000605f,0.000515f,-0.00114f,0.000838f,0.00059f,-0.00127f,0.000568f,0.000361f,-0.00144f,0.f,0.f,0.f,0.f,0.f,8.6e-06f,-0.000646f,-0.000371f,0.000425f,-0.000181f,0.00088f,0.000776f,9.39e-06f,0.00128f,0.00059f,-4.05e-06f,-4.02e-05f,-0.000884f,-0.00152f,-0.000677f,-0.00183f,-0.00271f,-0.00148f,0.00126f,0.000459f,0.000762f,0.000513f,-0.000232f,0.000953f,-0.000887f,-0.00186f,-0.0002f,0.f,0.f,0.f,0.f,0.f,-0.00151f,0.00131f,-0.0002f,-0.00127f,0.00132f,7.72e-05f,-0.000569f,0.00177f,0.000582f,-0.00202f,0.000843f,-0.000669f,-0.00229f,0.000385f,-0.000894f,-0.00255f,-0.000113f,-0.00141f,-0.000926f,0.00233f,0.000315f,-0.000176f,0.00303f,0.0012f,-0.00099f,0.00205f,0.000166f,0.f,0.f,0.f,0.f,0.f,0.00141f,0.00304f,0.00173f,0.00349f,0.0049f,0.00241f,0.00303f,0.00445f,0.00229f,-0.00143f,-0.00115f,-0.000904f,-0.0015f,-0.00152f,-0.00236f,-0.000391f,-0.000231f,-0.000779f,-0.00148f,-0.00193f,9.87e-05f,-0.00282f,-0.00362f,-0.00268f,-0.00153f,-0.0022f,-0.00108f,0.f,0.f,0.f,0.f,0.f,-0.00081f,0.00102f,-0.00146f,-0.00033f,0.00134f,-0.00134f,-0.000464f,0.00119f,-0.0011f,0.000263f,0.00181f,-0.00111f,0.000472f,0.0019f,-0.00125f,-0.000123f,0.00134f,-0.00142f,0.000428f,0.00189f,-0.00112f,0.000642f,0.00204f,-0.00122f,-4.28e-05f,0.00144f,-0.00145f,0.f,0.f,0.f,0.f,0.f,0.00112f,-0.00111f,0.00124f,0.000165f,-0.00198f,0.000625f,0.000405f,-0.0018f,0.000435f,0.000595f,-0.00141f,0.000509f,-0.000725f,-0.00268f,-0.000502f,0.000188f,-0.0019f,1.33e-05f,0.0013f,-0.000741f,0.000617f,0.000943f,-0.00107f,0.000532f,0.00149f,-0.000687f,0.000744f,0.f,0.f,0.f,0.f,0.f,0.000174f,-0.00194f,0.000721f,0.000694f,-0.00127f,0.00207f,0.000667f,-0.0019f,0.00139f,-0.000267f,-0.00228f,0.000145f,0.00118f,-0.00072f,0.0025f,0.000492f,-0.00212f,0.00121f,0.000531f,-0.00194f,-0.000488f,0.00235f,-4.66e-05f,0.00227f,0.000804f,-0.00234f,0.000199f,0.f,0.f,0.f,0.f,0.f,0.00212f,0.00056f,0.00146f,0.000984f,0.000783f,0.000573f,8.54e-05f,0.00171f,0.00101f,-0.00292f,-0.00494f,-0.00354f,-0.00226f,-0.00278f,-0.00269f,0.00104f,0.00263f,0.00205f,0.000944f,-0.000911f,0.000855f,-0.000849f,-0.00139f,-0.000898f,0.00111f,0.00249f,0.00251f,0.f,0.f,0.f,0.f,0.f,3.91e-05f,0.00114f,0.00118f,-0.000464f,0.000576f,0.00048f,-0.000301f,0.000772f,0.000801f,-0.000459f,0.000515f,0.000659f,-0.00108f,-0.000132f,-0.000147f,-0.000775f,0.000225f,0.000304f,-7.52e-05f,0.000696f,0.00117f,-0.000429f,0.000336f,0.000621f,-0.000162f,0.000675f,0.00102f,0.f,0.f,0.f,0.f,0.f,-0.000205f,-0.0017f,-0.000313f,-0.00314f,-0.00441f,-0.00293f,0.000865f,6.66e-05f,0.000775f,0.00142f,0.000645f,0.00165f,-0.000631f,-0.00108f,-6.76e-06f,0.00218f,0.00228f,0.00267f,0.000907f,0.000391f,0.00105f,-0.000888f,-0.00101f,-0.000385f,0.000438f,0.000818f,0.000845f,0.f,0.f,0.f,0.f,0.f,0.000383f,0.00171f,0.0014f,0.00206f,0.00365f,0.00388f,0.000981f,0.0024f,0.00225f,2.34e-05f,0.000112f,0.000178f,-0.000917f,-0.000846f,-0.000328f,-0.000119f,-0.000137f,-0.000195f,0.000305f,-0.001f,-0.00103f,-0.00266f,-0.00437f,-0.00381f,-0.00015f,-0.00178f,-0.00182f,0.f,0.f,0.f,0.f,0.f,1.41e-05f,-0.00121f,-0.000165f,-0.000174f,-0.00103f,-0.000719f,0.000261f,-6.83e-05f,-1.55e-06f,-0.000357f,-0.00167f,-0.000651f,-0.000568f,-0.00153f,-0.00109f,0.000146f,-0.000218f,0.000139f,0.00069f,-0.000961f,0.000727f,9.9e-05f,-0.00121f,8.09e-06f,0.000364f,-0.000414f,0.000911f,0.f,0.f,0.f,0.f,0.f,0.000526f,0.000758f,3.26e-05f,7.85e-05f,0.000488f,0.00033f,0.000207f,0.000276f,0.000458f,-8.38e-05f,0.00018f,0.000215f,-0.000188f,0.00037f,0.000939f,0.000118f,0.000407f,0.00123f,0.000217f,-0.000292f,-0.000752f,-7.5e-05f,-0.00031f,-0.000252f,0.000548f,0.000113f,0.00036f,0.f,0.f,0.f,0.f,0.f,-7.91e-05f,-0.000881f,-0.000466f,0.00014f,-0.000772f,-0.000223f,-0.000355f,-0.00111f,-0.000468f,-3.67e-05f,-0.000494f,-0.000328f,-0.000187f,-0.000788f,-0.000391f,-0.000816f,-0.00127f,-0.000725f,0.000428f,9.96e-05f,0.000111f,4.36e-05f,-0.000408f,-8.04e-05f,-0.000694f,-0.00105f,-0.000514f,0.f,0.f,0.f,0.f,0.f};
