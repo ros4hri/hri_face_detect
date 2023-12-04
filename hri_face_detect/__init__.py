@@ -11,3 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from .face_pose_estimation import face_pose_estimation, QuaternionData, VectorData
+from .one_euro_filter import OneEuroFilter, QuatOneEuroFilter
+from hri_face_detect.yunet_detector import YuNetDetector
+
+__all__ = [
+    face_pose_estimation,
+    OneEuroFilter,
+    QuaternionData,
+    QuatOneEuroFilter,
+    VectorData,
+    YuNetDetector]

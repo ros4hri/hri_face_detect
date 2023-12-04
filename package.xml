@@ -3,34 +3,42 @@
   <name>hri_face_detect</name>
   <version>1.5.3</version>
   <description>Google Mediapipe-based face detection for ROS4HRI</description>
-
   <maintainer email="severin.lemaignan@pal-robotics.com">Séverin Lemaignan</maintainer>
   <maintainer email="luka.juricic@pal-robotics.com">Luka Juricic</maintainer>
-
   <license>Apache License 2.0</license>
-
   <author email="severin.lemaignan@pal-robotics.com">Séverin Lemaignan</author>
+  <author email="luka.juricic@pal-robotics.com">Luka Juricic</author>
 
-  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <buildtool_depend>python_cmake_module</buildtool_depend>
 
-  <build_depend>pybind11_catkin</build_depend>
-  <build_depend>pybind11-dev</build_depend>
+  <build_depend>pybind11_vendor</build_depend>
 
+  <exec_depend>builtin_interfaces</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>hri_msgs</exec_depend>
-  <exec_depend>pybind11_catkin</exec_depend>
-  <exec_depend>pybind11-dev</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
   <exec_depend>python3-mediapipe</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-pil</exec_depend>
   <exec_depend>python3-scipy</exec_depend>
   <exec_depend>python3-tk</exec_depend>
-  <exec_depend>rospy</exec_depend>
+  <exec_depend>python3-transforms3d</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
-  <exec_depend>tf</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>tf_transformations</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
 
   <export>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>

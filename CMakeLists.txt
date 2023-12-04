@@ -1,27 +1,21 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.8)
 project(hri_face_detect)
 
-# configure the ROS package
-find_package(catkin REQUIRED
-  COMPONENTS pybind11_catkin
-)
-catkin_package(
-  CATKIN_DEPENDS
-    diagnostic_msgs
-    hri_msgs
-    pybind11_catkin
-    pybind11-dev
-    python3-mediapipe
-    python3-numpy
-    python3-opencv
-    python3-pil
-    python3-scipy
-    python3-tk
-    rospy
-    sensor_msgs
-    std_msgs
-    tf
-)
+# Global flags
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+endif()
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+# Dependencies
+find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)  # Find python before pybind11
+find_package(pybind11_vendor REQUIRED)
+find_package(pybind11 REQUIRED)
 
 ### OLDER ATTEMPT TO INCLUDE THE YUNET PROJECT AS EXTERNAL PROJECT WITH ORIGINAL CMAKELISTS.
 ### IT DID NOT WORK DUE TO ${CATKIN_DEVEL_PREFIX} INCONSISTENCIES IN THE BUILD FARM.
@@ -55,39 +49,33 @@ option(ENABLE_AVX2 "use avx2" ON)
 option(ENABLE_NEON "whether use neon, if use arm please set it on" OFF)
 option(USE_OPENMP "Use OpenMP" OFF)
 
-message("AVX512 = ${ENABLE_AVX512}")
-message("AVX2 = ${ENABLE_AVX2}")
-message("NEON = ${ENABLE_NEON}")
-message("OpenMP = ${USE_OPENMP}")
+message(STATUS "AVX512 = ${ENABLE_AVX512}")
+message(STATUS "AVX2 = ${ENABLE_AVX2}")
+message(STATUS "NEON = ${ENABLE_NEON}")
+message(STATUS "OpenMP = ${USE_OPENMP}")
 
 set(FDT_LIB_NAME   facedetection)
-set(FDT_BASE_DIR   ${PROJECT_SOURCE_DIR}/libfacedetection)
-set(FDT_SRC_DIR    ${FDT_BASE_DIR}/src)
-set(FDT_INC_DIR    ${FDT_BASE_DIR}/src)
+set(FDT_BASE_DIR   ${PROJECT_SOURCE_DIR})
+set(FDT_SRC_DIR    ${FDT_BASE_DIR}/src/libfacedetectcnn)
+set(FDT_INC_DIR    ${FDT_BASE_DIR}/include/libfacedetectcnn)
 
 # set compiler flags
 set(FDT_COMPILE_DEF)
 set(FDT_COMPILE_FEAT cxx_std_11)
 set(FDT_COMPILE_OPT -Wno-null-dereference)
 
-IF(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-   OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  #use -O3 to speedup
-  set(FDT_COMPILE_OPT ${FDT_COMPILE_OPT} -O3)
-ENDIF()
-
 if(ENABLE_AVX512)
-	set(FDT_COMPILE_DEF ${FDT_COMPILE_DEF} _ENABLE_AVX512)
-	set(FDT_COMPILE_OPT ${FDT_COMPILE_OPT} -mavx512bw)
+  set(FDT_COMPILE_DEF ${FDT_COMPILE_DEF} _ENABLE_AVX512)
+  set(FDT_COMPILE_OPT ${FDT_COMPILE_OPT} -mavx512bw)
 endif()
 
 if(ENABLE_AVX2)
   set(FDT_COMPILE_DEF ${FDT_COMPILE_DEF} -D_ENABLE_AVX2)
-	set(FDT_COMPILE_OPT ${FDT_COMPILE_OPT} -mavx2 -mfma)
+  set(FDT_COMPILE_OPT ${FDT_COMPILE_OPT} -mavx2 -mfma)
 endif()
 
 if(ENABLE_NEON)
-	message("Using ENON")
+  message("Using ENON")
   set(FDT_COMPILE_DEF ${FDT_COMPILE_DEF} _ENABLE_AVX2)
 endif()
 
@@ -124,34 +112,41 @@ set_target_properties(${FDT_LIB_NAME} PROPERTIES
 # Install target
 install(
   TARGETS ${FDT_LIB_NAME}
-  LIBRARY DESTINATION "${CATKIN_PACKAGE_LIB_DESTINATION}"
-  PUBLIC_HEADER DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+  LIBRARY DESTINATION lib
+  PUBLIC_HEADER DESTINATION include/${PROJECT_NAME}
 )
 
 ### End of YuNet face detection library
 
 #########################################################################################
 #########################################################################################
+ament_python_install_package(${PROJECT_NAME}
+  SCRIPTS_DESTINATION lib/${PROJECT_NAME}
+)
 
 # build the python bindings to the face detection library
-set(PYBIND11_FINDPYTHON ON)
-find_package(pybind11 CONFIG)
-pybind11_add_module(yunet_detector src/yunet_detector.cpp)
-target_include_directories(yunet_detector PRIVATE ${PYBIND11_INCLUDE_DIRS} ${FDT_INC_DIR})
+pybind11_add_module(yunet_detector src/hri_face_detect/yunet_detector.cpp)
+target_include_directories(yunet_detector PRIVATE ${PYBIND11_INCLUDE_DIRS} include)
 target_link_libraries(yunet_detector PRIVATE ${FDT_LIB_NAME})
-
-install(
-  TARGETS yunet_detector
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+install(TARGETS yunet_detector
+  LIBRARY DESTINATION "${PYTHON_INSTALL_DIR}/${PROJECT_NAME}"
 )
 
-# setup and install the ROS pyton package
-catkin_python_setup()
-catkin_install_python(
-  PROGRAMS scripts/detect
-  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
 )
-install(
-  DIRECTORY launch
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-)
+
+# Testing
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  find_package(ament_lint_common REQUIRED)
+
+  set(AMENT_LINT_AUTO_FILE_EXCLUDE
+    include/libfacedetectcnn/facedetectcnn.h
+    src/libfacedetectcnn/facedetectcnn-data.cpp
+    src/libfacedetectcnn/facedetectcnn-model.cpp
+    src/libfacedetectcnn/facedetectcnn.cpp)
+  ament_lint_auto_find_test_dependencies()
+endif()
+
+ament_package()

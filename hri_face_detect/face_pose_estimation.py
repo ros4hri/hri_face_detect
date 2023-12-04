@@ -13,10 +13,27 @@
 # limitations under the License.
 
 import cv2
+from dataclasses import dataclass
 import numpy as np
+from tf_transformations import quaternion_from_euler
 
 
-def face_pose_estimation(points_2D, points_3D, K):
+@dataclass
+class VectorData:
+    x: float
+    y: float
+    z: float
+
+
+@dataclass
+class QuaternionData:
+    x: float
+    y: float
+    z: float
+    w: float
+
+
+def face_pose_estimation(points_2D, points_3D, K) -> (VectorData, QuaternionData):
     _, rot_vec, trans_vec = cv2.solvePnP(
         points_3D,
         points_2D,
@@ -28,4 +45,10 @@ def face_pose_estimation(points_2D, points_3D, K):
     )
     rmat, _ = cv2.Rodrigues(rot_vec)
     angles, *_ = cv2.RQDecomp3x3(rmat)
-    return trans_vec, angles
+    angles = np.array(angles)
+    angles /= (180/np.pi)
+
+    trans_vec = VectorData(*[(coord / 1000) for coord in trans_vec])
+    angles_quaternion = QuaternionData(*quaternion_from_euler(*angles))
+
+    return trans_vec, angles_quaternion

@@ -35,12 +35,13 @@
 # Copied and adapted from https://github.com/jaantollander/OneEuroFilter
 
 import numpy as np
-from tf import transformations
+from tf_transformations import quaternion_slerp
 
 
 def smoothing_factor(t_e, cutoff):
     r = 2 * np.pi * cutoff * t_e
     return r / (r + 1)
+
 
 def exponential_smoothing(a, x, x_prev):
     return a * x + (1 - a) * x_prev
@@ -85,13 +86,14 @@ class OneEuroFilter:
 
         return x_hat, t_e
 
+
 class QuatOneEuroFilter:
     def __init__(self,
                  t0,
                  q0,
                  min_cutoff=1.0,
                  beta=0.0):
-        """ Initialize the one euro filter for quaternions """
+        """Initialize the one euro filter for quaternions."""
         self.min_cutoff = float(min_cutoff)
         self.beta = float(beta)
 
@@ -99,14 +101,14 @@ class QuatOneEuroFilter:
         self.t_prev = float(t0)
 
     def __call__(self, t, q):
-        """ compute the filtered quaternion """
+        """Compute the filtered quaternion."""
         t_e = t - self.t_prev
 
         d_theta = np.arccos(np.dot(self.q_prev, q))
         cutoff = self.min_cutoff + self.beta*abs(d_theta)
         a = smoothing_factor(t_e, cutoff)
-        estimated_q = transformations.quaternion_slerp(self.q_prev, q, a)
-        
+        estimated_q = quaternion_slerp(self.q_prev, q, a)
+
         self.q_prev = estimated_q
         self.t_prev = t
 

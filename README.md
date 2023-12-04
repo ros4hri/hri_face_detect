@@ -1,4 +1,4 @@
-# ROS4HRI Face Detection
+# hri_face_detect
 
 A [ROS4HRI](https://wiki.ros.org/hri)-compiant ROS node to perform fast face
 detection using
@@ -13,23 +13,19 @@ landmarks.
 
 ### Parameters
 
-- `/humans/faces/width` (int, default: 128):
-  Image width of the published cropped and aligned detected faces
+All parameters are loaded in the lifecycle `configuration` transition.
 
-- `/humans/faces/height` (int, default: 128):
-  Image height of the published cropped and aligned detected faces
-
-- `~processing_rate` (int, default: 30):
+- `processing_rate` (int, default: 30):
   Image processing logic execution rate in Hertz.
 
-- `~face_mesh` (bool, default: true):
+- `face_mesh` (bool, default: true):
   It enables the additional Mediapipe Face Mesh detection.
 
-- `~confidence_threshold` (double, default: 0.75):
+- `confidence_threshold` (double, default: 0.75):
   Candidate face detections with confidence lower that this threshold are not
   published.
 
-- `~image_scale` (double, default: 0.5):
+- `image_scale` (double, default: 0.5):
   The YuNet face detector accepts input image of dynamic size.
   This parameter controls the rescale factor applied to the input image before running the YuNet face detector.
   Lower image scale results in less processing time required and lower detection
@@ -37,7 +33,7 @@ landmarks.
   The output data (e.g., RoI) is invariant with this parameter and always refers
   to the original input image size.
 
-- `~filtering_frame` (string, default: "camera_color_optical_frame"):
+- `filtering_frame` (string, default: "camera_color_optical_frame"):
   The reference frame the estimated face pose should be transformed to before
   performing the filtering operations.
   Due to the proximity between the camera frame and the detected faces, and
@@ -45,26 +41,23 @@ landmarks.
   components (e.g., robot's head), directly filtering a face pose expressed in 
   camera optical frame might reduce the filtering quality.
 
-- `~deterministic_ids` (bool, default: false):
+- `deterministic_ids` (bool, default: false):
   If true the face ids start from "f00000" and increases by one for each new
   face. If false it is a random five letters sequence.
 
-- `~debug` (bool, default: false):
+- `debug` (bool, default: false):
   If true opens a windows showing the input image with face detections
   overlayed.
 
 ### Topics
 
-`hri_face_body_matcher` follows the ROS4HRI conventions
-([REP-155](https://www.ros.org/reps/rep-0155.html)).
+This package follows the ROS4HRI conventions ([REP-155](https://www.ros.org/reps/rep-0155.html)).
 If the topic message type is not indicated, the ROS4HRI convention is implied.
 
 #### Subscribed
 
-- `/camera/color/image_raw`
-  ([sensor_msgs/Image](http://docs.ros.org/en/noetic/api/sensor_msgs/html/msg/Image.html))
-- `/camera/color/camera_info`
-  ([sensor_msgs/Image](http://docs.ros.org/en/noetic/api/sensor_msgs/html/msg/Image.html))
+- `image_raw` ([sensor_msgs/msg/Image](https://github.com/ros2/common_interfaces/blob/humble/sensor_msgs/msg/Image.msg))
+- `camera_info` ([sensor_msgs/msg/CameraInfo](https://github.com/ros2/common_interfaces/blob/humble/sensor_msgs/msg/CameraInfo.msg))
 
 #### Published
 
@@ -73,13 +66,12 @@ If the topic message type is not indicated, the ROS4HRI convention is implied.
 - `/humans/faces/<faceID>/cropped`
 - `/humans/faces/<faceID>/aligned`
 - `/humans/faces/tracked`
-- `/diagnostics`
-  ([diagnostic_msgs/DiagnosticArray](https://docs.ros.org/en/noetic/api/diagnostic_msgs/html/msg/DiagnosticArray.html))
+- `/diagnostics` ([diagnostic_msgs/msg/DiagnosticArray](https://github.com/ros2/common_interfaces/blob/humble/diagnostic_msgs/msg/DiagnosticArray.msg))
 
 ## Execution
 
 ```bash
-roslaunch hri_face_detect detect.launch rgb_camera:=<input camera namespace>
+ros2 launch hri_face_detect face_detect.launch rgb_camera:=<input camera namespace>
 ```
 
 ## Visualization
