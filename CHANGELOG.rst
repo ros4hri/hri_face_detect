@@ -2,6 +2,14 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+
+* port to ROS 2 Humble
+* change license to apache2
+* change folder structure
+* Contributors: Luka Juricic
+
 1.5.3 (2023-11-27)
 ------------------
 * rework filtering frame validation
