@@ -74,8 +74,18 @@ If the topic message type is not indicated, the ROS4HRI convention is implied.
 ros2 launch hri_face_detect face_detect.launch rgb_camera:=<input camera namespace>
 ```
 
-## Visualization
+## Example
 
-[hri_rviz](../hri_rviz) provides Humans, an rviz plugin to easily visualize 
-faces bounding boxes and facial landmarks (the latter not published by this
-package).
+For an example of usage, execute in different terminals:
+- USB camera:
+  1. `apt install ros-humble-usb-cam`
+  2. `ros2 run usb_cam usb_cam_node_exe`
+- HRI face detect:
+  1. `apt install ros-humble-hri-face-detect`
+  2. `ros2 launch hri_face_detect face_detect.launch.py`
+- RViz with HRI plugin:
+  1. `apt install ros-humble-rviz2`
+  1. `apt install ros-humble-hri-rviz`
+  2. `rviz2`
+
+In RViz, add the 'Humans' plugin to see the detected faces with the relative keypoints.
