@@ -452,7 +452,7 @@ class Face:
         self.aligned_pub.publish(msg)
 
     def compute_6d_pose(
-            self, K: np.ndarray, camera_optical_frame: str, stamp: Stamp):
+            self, k: np.ndarray, camera_optical_frame: str, stamp: Stamp):
         # use the face mesh landmarks to compute the pose if all the necessary ones are found,
         # otherwise use the ones extracted by the face detector which are guaranteed
         landmarks_2d_to_3d = {
@@ -484,7 +484,7 @@ class Face:
                 ], dtype='double')
             points_3D = np.array([P3D_RIGHT_EYE, P3D_LEFT_EYE, P3D_NOSE, P3D_STOMION])
 
-        trans_vec, angles_quaternion = face_pose_estimation(points_2D, points_3D, K)
+        trans_vec, angles_quaternion = face_pose_estimation(points_2D, points_3D, k)
 
         if self.tf_buffer and self.filtering_frame:
             point_trans_vec = PointStamped(
@@ -922,8 +922,8 @@ class NodeFaceDetect(Node):
             face = self.knownFaces[id]
             if face.ready and face.do_publish:
                 face.publish(image, image_msg_header)
-                if hasattr(self, 'K'):
-                    face.compute_6d_pose(self.K, image_msg_header.frame_id, image_msg_header.stamp)
+                if hasattr(self, 'k'):
+                    face.compute_6d_pose(self.k, image_msg_header.frame_id, image_msg_header.stamp)
                     self.tf_broadcaster.sendTransform(face.head_transform)
                     self.tf_broadcaster.sendTransform(face.gaze_transform)
 
