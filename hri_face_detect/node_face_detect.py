@@ -227,12 +227,6 @@ class FaceDetection:
         self.score = bound(self.score, 0., 1.)
 
 
-@dataclass
-class MeshDetection:
-    bb: BoundingBox
-    landmarks: Dict[int, ImagePoint]  # FacialLandmarks to ImagePoint
-
-
 def normalized_to_pixel_coordinates(
         x_norm: float, y_norm: float, image_width: int, image_height: int) -> (float, float):
     x_px = bound(int(x_norm * image_width), 0, image_width - 1)
@@ -644,7 +638,7 @@ class MeshDetector:
 
     @staticmethod
     def _extract_mesh_detection(
-            raw_landmarks: List, image_width: int, image_height: int) -> MeshDetection:
+            raw_landmarks: List, image_width: int, image_height: int) -> FaceDetection:
         xmin = image_width - 1
         ymin = image_height - 1
         xmax = 0
@@ -664,12 +658,12 @@ class MeshDetector:
 
         bb = BoundingBox(xmin, ymin, xmax - xmin, ymax - ymin, image_width, image_height)
 
-        return MeshDetection(bb, landmarks)
+        return FaceDetection(1.0, bb, landmarks)
 
-    def detect(self, img: RGBMat) -> List[MeshDetection]:
+    def detect(self, img: RGBMat) -> List[FaceDetection]:
         img_height, img_width, _ = img.shape
 
-        mesh_detections: List[MeshDetection] = list()
+        mesh_detections: List[FaceDetection] = list()
         mesh_results = self.detector.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         if mesh_results.multi_face_landmarks:
             mesh_detections = [
