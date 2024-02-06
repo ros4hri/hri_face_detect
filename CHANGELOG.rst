@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+2.0.1 (2024-02-06)
+------------------
 * fix image calibration K name to lowercase k. This caused the publication of TF
   frames to be broken.
 * assign default score detection in case of mesh detection
