@@ -87,7 +87,7 @@ If the topic message type is not indicated, the ROS4HRI convention is implied.
 ## Execution
 
 ```bash
-ros2 launch hri_face_detect face_detect.launch rgb_camera:=<input camera namespace>
+ros2 launch hri_face_detect hri_face_detect.launch.py
 ```
 
 ## Example
@@ -95,10 +95,10 @@ ros2 launch hri_face_detect face_detect.launch rgb_camera:=<input camera namespa
 For an example of usage, execute in different terminals:
 - USB camera:
   1. `apt install ros-humble-usb-cam`
-  2. `ros2 run usb_cam usb_cam_node_exe`
+  2. `ros2 run usb_cam usb_cam_node_exe --ros-args -p pixel_format:="mjpeg2rgb"`
 - HRI face detect:
   1. `apt install ros-humble-hri-face-detect`
-  2. `ros2 launch hri_face_detect face_detect.launch.py`
+  2. `ros2 launch hri_face_detect hri_face_detect.launch.py`
 - RViz with HRI plugin:
   1. `apt install ros-humble-rviz2`
   1. `apt install ros-humble-hri-rviz`
