@@ -1,13 +1,10 @@
 /hri_face_detect:
   ros__parameters:
     processing_rate: 30 # Best effort frequency for processing input images
+    image_compressed: true # Use compressed image transport
     confidence_threshold: 0.75 # the confidence threshold for the face detection
     image_scale: 0.5 #Input scale for the image processing pipeline wrt 640x480 pixels
     face_mesh: true # enable face mesh for close-by faces
     filtering_frame: 'camera_color_optical_frame' # the frame where the face TF pose filtering will take place
     deterministic_ids: false # if true, the face ids will be deterministic
     debug: false # Enable debugging output image window
-  remappings:
-    image: /image_raw # the default input camera image topic following generic usb_cam topic naming
-    camera_info: /camera_info # the input camera info topic
-

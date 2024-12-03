@@ -38,7 +38,7 @@ from rclpy.lifecycle.node import LifecycleState
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
 from scipy.optimize import linear_sum_assignment
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import CompressedImage, Image, CameraInfo
 from std_msgs.msg import Header
 from tf_transformations import quaternion_from_euler
 from tf2_geometry_msgs.tf2_geometry_msgs import Point, PointStamped
@@ -684,6 +684,9 @@ class NodeFaceDetect(Node):
             'processing_rate', 30, ParameterDescriptor(
                 description='Best effort frequency for processing input images'))
         self.declare_parameter(
+            'image_compressed', True, ParameterDescriptor(
+                description='Selects the compressed image transport'))
+        self.declare_parameter(
             'confidence_threshold', 0.75, ParameterDescriptor(
                 description='Face detection confidence threshold'))
         self.declare_parameter(
@@ -712,6 +715,7 @@ class NodeFaceDetect(Node):
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self.processing_rate = self.get_parameter('processing_rate').value
+        self.image_compressed = self.get_parameter('image_compressed').value
         self.filtering_frame = self.get_parameter('filtering_frame').value
         self.deterministic_ids = self.get_parameter('deterministic_ids').value
         self.debug = self.get_parameter('debug').value
@@ -746,12 +750,19 @@ class NodeFaceDetect(Node):
         self.tf_buffer = Buffer(node=self)
         self.tf_listener = TransformListener(buffer=self.tf_buffer, node=self)
         self.faces_pub = self.create_publisher(IdsList, '/humans/faces/tracked', 1)
-        self.image_sub = self.create_subscription(
-            Image, 'image', self.image_callback, qos_profile=qos_profile_sensor_data)
         self.image_info_sub = self.create_subscription(
             CameraInfo, 'camera_info', self.info_callback, qos_profile=qos_profile_sensor_data)
         self.proc_timer = self.create_timer(
             1/self.get_parameter('processing_rate').value, self.process_image)
+
+        image_topic = self.resolve_topic_name('image_raw')
+        if self.image_compressed:
+            self.image_sub = self.create_subscription(
+                CompressedImage, f'{image_topic}/compressed', self.image_callback,
+                qos_profile=qos_profile_sensor_data)
+        else:
+            self.image_sub = self.create_subscription(
+                Image, image_topic, self.image_callback, qos_profile=qos_profile_sensor_data)
 
         self.diag_pub = self.create_publisher(DiagnosticArray, '/diagnostics', 1)
         self.diag_timer = self.create_timer(1/DIAG_PUB_RATE, self.do_diagnostics)
@@ -823,9 +834,12 @@ class NodeFaceDetect(Node):
             self.k[1][0:3] = self.msg.k[3:6]
             self.k[2][0:3] = self.msg.k[6:9]
 
-    def image_callback(self, msg: Image):
+    def image_callback(self, msg: Image | CompressedImage):
         with self.image_lock:
-            self.image = CvBridge().imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            if self.image_compressed:
+                self.image = CvBridge().compressed_imgmsg_to_cv2(msg)
+            else:
+                self.image = CvBridge().imgmsg_to_cv2(msg, desired_encoding='bgr8')
             self.image_msg_header = msg.header
 
             if self.new_image:
