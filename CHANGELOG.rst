@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+2.1.0 (2024-12-04)
+------------------
 * use uncompressed images by default
 * use launch file with pal args
 * add compressed image support
