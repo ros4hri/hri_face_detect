@@ -1,7 +1,7 @@
 /hri_face_detect:
   ros__parameters:
     processing_rate: 30 # Best effort frequency for processing input images
-    image_compressed: true # Use compressed image transport
+    image_compressed: false # Use compressed image transport
     confidence_threshold: 0.75 # the confidence threshold for the face detection
     image_scale: 0.5 #Input scale for the image processing pipeline wrt 640x480 pixels
     face_mesh: true # enable face mesh for close-by faces

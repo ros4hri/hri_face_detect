@@ -684,7 +684,7 @@ class NodeFaceDetect(Node):
             'processing_rate', 30, ParameterDescriptor(
                 description='Best effort frequency for processing input images'))
         self.declare_parameter(
-            'image_compressed', True, ParameterDescriptor(
+            'image_compressed', False, ParameterDescriptor(
                 description='Selects the compressed image transport'))
         self.declare_parameter(
             'confidence_threshold', 0.75, ParameterDescriptor(

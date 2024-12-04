@@ -26,7 +26,7 @@ All parameters are loaded in the lifecycle `configuration` transition.
 - `processing_rate` (int, default: 30):
   Image processing logic execution rate in Hertz.
 
-- `image_compressed` (bool, default: true):
+- `image_compressed` (bool, default: false):
   Selects the compressed image transport.
 
 - `face_mesh` (bool, default: true):
