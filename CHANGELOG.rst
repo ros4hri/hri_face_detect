@@ -2,6 +2,15 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* use uncompressed images by default
+* use launch file with pal args
+* add compressed image support
+* Readme
+* Pip requirements for running the package outside PAL
+* Contributors: Luka Juricic, Oscar Martinez
+
 2.0.10 (2024-09-16)
 -------------------
 * use python3-mediapipe-pip on non-PAL environments
