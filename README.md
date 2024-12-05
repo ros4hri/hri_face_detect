@@ -67,12 +67,12 @@ If the topic message type is not indicated, the ROS4HRI convention is implied.
 
 #### Subscribed
 
-- `image_raw` ([sensor_msgs/msg/Image](https://github.com/ros2/common_interfaces/blob/humble/sensor_msgs/msg/Image.msg)):
+- `image` ([sensor_msgs/msg/Image](https://github.com/ros2/common_interfaces/blob/humble/sensor_msgs/msg/Image.msg)):
   only if `image_compressed` is false
-- `image_raw/compressed` ([sensor_msgs/msg/CompressedImage](https://github.com/ros2/common_interfaces/blob/humble/sensor_msgs/msg/CompressedImage.msg)):
+- `image/compressed` ([sensor_msgs/msg/CompressedImage](https://github.com/ros2/common_interfaces/blob/humble/sensor_msgs/msg/CompressedImage.msg)):
   only if `image_compressed` is true;
   note that the suffix `/compressed` is added *after* the remapping is resolved,
-  so you should remap only `image_raw` regardless of the `image_compressed` value.
+  so you should remap only `image` regardless of the `image_compressed` value.
 - `camera_info` ([sensor_msgs/msg/CameraInfo](https://github.com/ros2/common_interfaces/blob/humble/sensor_msgs/msg/CameraInfo.msg))
 
 #### Published

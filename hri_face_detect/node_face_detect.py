@@ -755,7 +755,7 @@ class NodeFaceDetect(Node):
         self.proc_timer = self.create_timer(
             1/self.get_parameter('processing_rate').value, self.process_image)
 
-        image_topic = self.resolve_topic_name('image_raw')
+        image_topic = self.resolve_topic_name('image')
         if self.image_compressed:
             self.image_sub = self.create_subscription(
                 CompressedImage, f'{image_topic}/compressed', self.image_callback,

@@ -8,3 +8,6 @@
     filtering_frame: 'camera_color_optical_frame' # the frame where the face TF pose filtering will take place
     deterministic_ids: false # if true, the face ids will be deterministic
     debug: false # Enable debugging output image window
+  remappings:
+    image: image # the default input camera image topic (it will remap also the optional <image>/compressed topic)
+    camera_info: camera_info # the input camera info topic
