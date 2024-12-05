@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>hri_face_detect</name>
-  <version>2.1.0</version>
+  <version>2.2.0</version>
   <description>Google Mediapipe-based face detection for ROS4HRI</description>
   <maintainer email="severin.lemaignan@pal-robotics.com">Séverin Lemaignan</maintainer>
   <maintainer email="luka.juricic@pal-robotics.com">Luka Juricic</maintainer>
