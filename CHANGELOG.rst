@@ -2,6 +2,11 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* use consistent default image topic
+* Contributors: Luka Juricic
+
 2.1.0 (2024-12-04)
 ------------------
 * use uncompressed images by default
