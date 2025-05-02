@@ -2,6 +2,11 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* shutdown the whole launch file on crash
+* Contributors: Séverin Lemaignan
+
 2.2.0 (2024-12-05)
 ------------------
 * use consistent default image topic
