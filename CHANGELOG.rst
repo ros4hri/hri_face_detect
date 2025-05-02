@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+2.2.1 (2025-05-02)
+------------------
 * shutdown the whole launch file on crash
 * Contributors: Séverin Lemaignan
 
