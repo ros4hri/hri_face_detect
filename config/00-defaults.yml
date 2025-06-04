@@ -8,6 +8,10 @@
     filtering_frame: 'camera_color_optical_frame' # the frame where the face TF pose filtering will take place
     deterministic_ids: false # if true, the face ids will be deterministic
     debug: false # Enable debugging output image window
+    use_depth: true # Use depth image for face pose estimation
+    depth_compressed: false # Use compressed depth image transport
   remappings:
     image: image # the default input camera image topic (it will remap also the optional <image>/compressed topic)
     camera_info: camera_info # the input camera info topic
+    depth_image: depth_image # the input depth image topic
+    depth_info: depth_info

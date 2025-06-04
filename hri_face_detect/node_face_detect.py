@@ -20,12 +20,15 @@ from dataclasses import asdict, astuple, dataclass, InitVar
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import TransformStamped, Vector3, Quaternion
 from hri_face_detect import (
-    face_pose_estimation, OneEuroFilter, QuaternionData, QuatOneEuroFilter, YuNetDetector)
+    face_pose_estimation, OneEuroFilter,
+    QuaternionData, QuatOneEuroFilter, VectorData, YuNetDetector)
 from hri_msgs.msg import (
     FacialLandmarks, IdsList, NormalizedPointOfInterest2D, NormalizedRegionOfInterest2D)
 from lifecycle_msgs.msg import State
 import math
 from mediapipe.python.solutions.face_mesh import FaceMesh
+import message_filters
+from message_filters import ApproximateTimeSynchronizer
 import numpy as np
 from PIL import Image as PILImage
 import random
@@ -40,6 +43,7 @@ from rclpy.time import Time
 from scipy.optimize import linear_sum_assignment
 from sensor_msgs.msg import CompressedImage, Image, CameraInfo
 from std_msgs.msg import Header, String
+import struct
 from tf_transformations import quaternion_from_euler
 from tf2_geometry_msgs.tf2_geometry_msgs import Point, PointStamped
 from tf2_ros import Buffer, TransformBroadcaster, TransformListener
@@ -268,7 +272,8 @@ class Face:
             Face.last_id = (Face.last_id + 1) % 10000
         else:
             # for a 5 char long ID
-            self.id = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=5))
+            self.id = ''.join(random.choices(
+                'abcdefghijklmnopqrstuvwxyz', k=5))
 
         self.initial_detection_time: Time = None
         self.nb_frames_visible = 0
@@ -345,9 +350,11 @@ class Face:
         img_height, img_width, _ = src_image.shape
         msg = FacialLandmarks()
         msg.header = image_msg_header
-        msg.landmarks = [NormalizedPointOfInterest2D() for _ in range(ROS4HRI_LANDMARKS_N)]
+        msg.landmarks = [NormalizedPointOfInterest2D()
+                         for _ in range(ROS4HRI_LANDMARKS_N)]
         for idx, landmark in self.landmarks.items():
-            x, y = pixel_to_normalized_coordinates(landmark.x, landmark.y, img_width, img_height)
+            x, y = pixel_to_normalized_coordinates(
+                landmark.x, landmark.y, img_width, img_height)
             msg.landmarks[idx].x = x
             msg.landmarks[idx].y = y
             msg.landmarks[idx].c = self.score
@@ -372,12 +379,14 @@ class Face:
         scaled = cv2.resize(roi, None, fx=scale, fy=scale)
         scaled_h, scaled_w = scaled.shape[:2]
 
-        output = np.zeros((cropped_face_width, cropped_face_height, 3), np.uint8)
+        output = np.zeros(
+            (cropped_face_width, cropped_face_height, 3), np.uint8)
 
         x_offset = int((cropped_face_width - scaled_w) / 2)
         y_offset = int((cropped_face_height - scaled_h) / 2)
 
-        output[y_offset:(y_offset+scaled_h), x_offset:(x_offset + scaled_w)] = scaled
+        output[y_offset:(y_offset+scaled_h),
+               x_offset:(x_offset + scaled_w)] = scaled
 
         msg = CvBridge().cv2_to_imgmsg(output, encoding='bgr8')
         msg.header = image_msg_header
@@ -436,8 +445,10 @@ class Face:
             if direction == -1:
                 angle = 90 - angle
 
-            img = PILImage.fromarray(preroi)  # convert to a PIL image to rotate it
-            preroi = np.array(img.rotate(-direction * angle, PILImage.BILINEAR))
+            # convert to a PIL image to rotate it
+            img = PILImage.fromarray(preroi)
+            preroi = np.array(
+                img.rotate(-direction * angle, PILImage.BILINEAR))
 
         roi = preroi[(y - ym1):(y - ym1 + h), (x - xm1):(x - xm1 + w)]
 
@@ -449,19 +460,61 @@ class Face:
         scaled = cv2.resize(roi, None, fx=scale, fy=scale)
         scaled_h, scaled_w = scaled.shape[:2]
 
-        output = np.zeros((cropped_face_width, cropped_face_height, 3), np.uint8)
+        output = np.zeros(
+            (cropped_face_width, cropped_face_height, 3), np.uint8)
 
         x_offset = int((cropped_face_width - scaled_w) / 2)
         y_offset = int((cropped_face_height - scaled_h) / 2)
 
-        output[y_offset:(y_offset + scaled_h), x_offset:(x_offset + scaled_w)] = scaled
+        output[y_offset:(y_offset + scaled_h),
+               x_offset:(x_offset + scaled_w)] = scaled
 
         msg = CvBridge().cv2_to_imgmsg(output, encoding='bgr8')
         msg.header = image_msg_header
         self.aligned_pub.publish(msg)
 
+    def compute_position_from_depth(
+            self,
+            depth_image: np.ndarray,
+            depth_k: np.ndarray,
+            avg_points: list,
+            depth_scale_factor: float):
+        """
+        Compute the face distance based on the depth image.
+
+        We iterate over avg_points and we average their value.
+        """
+        if avg_points is None or avg_points == []:
+            return VectorData(0.0, 0.0, 0.0)
+        else:
+            # we iterate over the value of the depth image
+            point_count = 0
+            sum_x = sum_y = sum_z = 0.
+            for point in avg_points:
+                if point is not None and len(point) == 2:
+                    if point[0] < 0 or point[1] < 0 \
+                       or point[0] >= depth_image.shape[1] \
+                       or point[1] >= depth_image.shape[0]:
+                        continue
+                    depth_value = depth_image[int(point[1]), int(point[0])]
+                # convert the depth value to meters
+                z = depth_value * depth_scale_factor
+                if z < 0.0:
+                    continue
+                sum_z += z
+                sum_x += (point[0] - depth_k[0, 2]) * z / depth_k[0, 0]
+                sum_y += (point[1] - depth_k[1, 2]) * z / depth_k[1, 1]
+                point_count += 1
+            return np.array([sum_x / point_count, sum_y / point_count, sum_z / point_count])
+
     def compute_6d_pose(
-            self, k: np.ndarray, camera_optical_frame: str, stamp: Stamp):
+            self,
+            k: np.ndarray,
+            camera_optical_frame: str,
+            stamp: Stamp,
+            depth_image: np.ndarray = None,
+            depth_k: np.ndarray = None,
+            depth_scale_factor: float = 1e-3):
         # use the face mesh landmarks to compute the pose if all the necessary ones are found,
         # otherwise use the ones extracted by the face detector which are guaranteed
         landmarks_2d_to_3d = {
@@ -474,7 +527,8 @@ class Face:
 
         if all(lm_key in self.landmarks for lm_key in landmarks_2d_to_3d.keys()):
             points_2D = np.array(
-                [astuple(self.landmarks[lm_key]) for lm_key in landmarks_2d_to_3d.keys()],
+                [astuple(self.landmarks[lm_key])
+                 for lm_key in landmarks_2d_to_3d.keys()],
                 dtype='double')
             points_3D = np.array(list(landmarks_2d_to_3d.values()))
         else:
@@ -491,9 +545,21 @@ class Face:
                     astuple(self.landmarks[FacialLandmarks.NOSE]),
                     landmark_stomion
                 ], dtype='double')
-            points_3D = np.array([P3D_RIGHT_EYE, P3D_LEFT_EYE, P3D_NOSE, P3D_STOMION])
+            points_3D = np.array(
+                [P3D_RIGHT_EYE, P3D_LEFT_EYE, P3D_NOSE, P3D_STOMION])
 
-        trans_vec, angles_quaternion = face_pose_estimation(points_2D, points_3D, k)
+        trans_vec_pnp, angles_quaternion = face_pose_estimation(
+            points_2D, points_3D, k)
+
+        trans_vec = trans_vec_pnp
+
+        if depth_image is not None and depth_k is not None:
+            trans_vec = self.compute_position_from_depth(
+                depth_image, depth_k, points_2D, depth_scale_factor)
+            if trans_vec.any():
+                trans_vec = VectorData(*trans_vec)
+            else:
+                trans_vec = trans_vec_pnp
 
         if self.tf_buffer and self.filtering_frame:
             point_trans_vec = PointStamped(
@@ -501,7 +567,8 @@ class Face:
                 point=Point(**asdict(trans_vec)))
 
             try:
-                point_trans_vec = self.tf_buffer.transform(point_trans_vec, self.filtering_frame)
+                point_trans_vec = self.tf_buffer.transform(
+                    point_trans_vec, self.filtering_frame)
                 trans_vec.x = point_trans_vec.point.x
                 trans_vec.y = point_trans_vec.point.y
                 trans_vec.z = point_trans_vec.point.z
@@ -533,9 +600,12 @@ class Face:
                 d_cutoff=D_CUTOFF_POSITION,
                 min_cutoff=MIN_CUTOFF_POSITION)
         else:
-            trans_vec.x = self.one_euro_filters_xyz[0](current_time, trans_vec.x)[0]
-            trans_vec.y = self.one_euro_filters_xyz[1](current_time, trans_vec.y)[0]
-            trans_vec.z = self.one_euro_filters_xyz[2](current_time, trans_vec.z)[0]
+            trans_vec.x = self.one_euro_filters_xyz[0](
+                current_time, trans_vec.x)[0]
+            trans_vec.y = self.one_euro_filters_xyz[1](
+                current_time, trans_vec.y)[0]
+            trans_vec.z = self.one_euro_filters_xyz[2](
+                current_time, trans_vec.z)[0]
 
         if not self.one_euro_filter_quaternion:
             self.one_euro_filter_quaternion = QuatOneEuroFilter(
@@ -550,7 +620,8 @@ class Face:
                 point=Point(**asdict(trans_vec)))
 
             try:
-                point_trans_vec = self.tf_buffer.transform(point_trans_vec, camera_optical_frame)
+                point_trans_vec = self.tf_buffer.transform(
+                    point_trans_vec, camera_optical_frame)
             except Exception as e:
                 self.node.get_logger().debug(
                     f'An error occured while transforming from frame "{self.filtering_frame}" to '
@@ -562,10 +633,13 @@ class Face:
 
         # calculating angle
         self.head_transform = TransformStamped()
-        self.head_transform.header = Header(stamp=stamp, frame_id=camera_optical_frame)
+        self.head_transform.header = Header(
+            stamp=stamp, frame_id=camera_optical_frame)
         self.head_transform.child_frame_id = f'face_{self.id}'
-        self.head_transform.transform.translation = Vector3(**asdict(trans_vec))
-        self.head_transform.transform.rotation = Quaternion(**asdict(angles_quaternion))
+        self.head_transform.transform.translation = Vector3(
+            **asdict(trans_vec))
+        self.head_transform.transform.rotation = Quaternion(
+            **asdict(angles_quaternion))
 
         self.gaze_transform = TransformStamped()
         self.gaze_transform.header = Header(stamp=stamp, frame_id=f'face_{self.id}')
@@ -578,7 +652,8 @@ class Face:
         if not self.ready:
             return
 
-        detect_time = (self.node.get_clock().now() - self.initial_detection_time).nanoseconds / 1e9
+        detect_time = (self.node.get_clock().now() -
+                       self.initial_detection_time).nanoseconds / 1e9
         self.node.get_logger().info(
             f'Face [{self}] lost. It remained visible for {detect_time:.2f}sec')
 
@@ -603,7 +678,7 @@ class FaceDetector:
     @staticmethod
     def _extract_face_detection(
             raw_detection: List, scale: float, image_width: int, image_height: int
-            ) -> FaceDetection:
+    ) -> FaceDetection:
         score = float(raw_detection[0]) / 100.
         scaled_raw_coords = [int(x*scale) for x in raw_detection[1:15]]
         bb = BoundingBox(*scaled_raw_coords[0:4], image_width, image_height)
@@ -632,7 +707,8 @@ class FaceDetector:
         raw_face_detections = self.detector.detect(
             scaled_img, scaled_img_width, scaled_img_height, scaled_img.strides[0])
         face_detections = [
-            self._extract_face_detection(d, 1./self.image_scale, img_width, img_height)
+            self._extract_face_detection(
+                d, 1./self.image_scale, img_width, img_height)
             for d in raw_face_detections]
         valid_face_detections = [
             d for d in face_detections
@@ -660,13 +736,15 @@ class MeshDetector:
             x, y = normalized_to_pixel_coordinates(
                 landmark_norm.x, landmark_norm.y, image_width, image_height
             )
-            landmarks[ros4hri_idx] = ImagePoint(x, y, image_width, image_height)
+            landmarks[ros4hri_idx] = ImagePoint(
+                x, y, image_width, image_height)
             xmin = min(x, xmin)
             ymin = min(y, ymin)
             xmax = max(x, xmax)
             ymax = max(y, ymax)
 
-        bb = BoundingBox(xmin, ymin, xmax - xmin, ymax - ymin, image_width, image_height)
+        bb = BoundingBox(xmin, ymin, xmax - xmin, ymax -
+                         ymin, image_width, image_height)
 
         return FaceDetection(1.0, bb, landmarks)
 
@@ -674,10 +752,12 @@ class MeshDetector:
         img_height, img_width, _ = img.shape
 
         mesh_detections: List[FaceDetection] = list()
-        mesh_results = self.detector.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        mesh_results = self.detector.process(
+            cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         if mesh_results.multi_face_landmarks:
             mesh_detections = [
-                self._extract_mesh_detection(raw_landmarks, img_width, img_height)
+                self._extract_mesh_detection(
+                    raw_landmarks, img_width, img_height)
                 for raw_landmarks in mesh_results.multi_face_landmarks]
 
         return mesh_detections
@@ -713,6 +793,12 @@ class NodeFaceDetect(Node):
         self.declare_parameter(
             'debug', False, ParameterDescriptor(
                 description='Enable debugging output image window'))
+        self.declare_parameter(
+            'use_depth', False, ParameterDescriptor(
+                description='Enable depth image-based pose estimation'))
+        self.declare_parameter(
+            'depth_compressed', False, ParameterDescriptor(
+                description='Selects the compressed depth image transport'))
 
         self.image_topic = ''
         self.get_logger().info('State: Unconfigured.')
@@ -729,11 +815,14 @@ class NodeFaceDetect(Node):
         self.filtering_frame = self.get_parameter('filtering_frame').value
         self.deterministic_ids = self.get_parameter('deterministic_ids').value
         self.debug = self.get_parameter('debug').value
+        self.use_depth = self.get_parameter('use_depth').value
+        self.depth_compressed = self.get_parameter('depth_compressed').value
 
         self.face_detector = FaceDetector(
             self.get_parameter('confidence_threshold').value,
             self.get_parameter('image_scale').value)
-        self.mesh_detector = MeshDetector() if self.get_parameter('face_mesh').value else None
+        self.mesh_detector = MeshDetector() if self.get_parameter(
+            'face_mesh').value else None
 
         self.get_logger().info('State: Inactive.')
         return super().on_configure(state)
@@ -759,23 +848,51 @@ class NodeFaceDetect(Node):
         self.tf_broadcaster = TransformBroadcaster(node=self)
         self.tf_buffer = Buffer(node=self)
         self.tf_listener = TransformListener(buffer=self.tf_buffer, node=self)
-        self.faces_pub = self.create_publisher(IdsList, '/humans/faces/tracked', 1)
+        self.faces_pub = self.create_publisher(
+            IdsList, '/humans/faces/tracked', 1)
         self.image_info_sub = self.create_subscription(
             CameraInfo, 'camera_info', self.info_callback, qos_profile=qos_profile_sensor_data)
+        if self.use_depth:
+            self.depth_info_sub = self.create_subscription(
+                CameraInfo, 'depth_info',
+                self.depth_info_callback,
+                qos_profile=qos_profile_sensor_data)
+            self.depth_scale_factor = 1e-3  # by default, assuming depth is in mm (16UC1)
         self.proc_timer = self.create_timer(
             1/self.get_parameter('processing_rate').value, self.process_image)
 
         self.image_topic = self.resolve_topic_name('image')
         if self.image_compressed:
-            self.image_sub = self.create_subscription(
-                CompressedImage, f'{self.image_topic}/compressed', self.image_callback,
+            full_image_topic = self.image_topic + "/compressed"
+        image_type = CompressedImage if self.image_compressed else Image
+        if self.use_depth:
+            depth_topic = self.resolve_topic_name('depth_image') \
+                + ("/compressedDepth" if self.depth_compressed else "")
+            depth_type = CompressedImage if self.depth_compressed else Image
+
+        if self.use_depth:
+            self.rgb_mf_subscriber = message_filters.Subscriber(
+                self,
+                image_type,
+                full_image_topic,
                 qos_profile=qos_profile_sensor_data)
+            self.depth_mf_subscriber = message_filters.Subscriber(
+                self,
+                depth_type,
+                depth_topic,
+                qos_profile=qos_profile_sensor_data)
+            self.ts = ApproximateTimeSynchronizer(
+                [self.rgb_mf_subscriber, self.depth_mf_subscriber], 10, 0.1)
+            self.ts.registerCallback(self.image_w_depth_callback)
         else:
             self.image_sub = self.create_subscription(
-                Image, self.image_topic, self.image_callback, qos_profile=qos_profile_sensor_data)
+                image_type, full_image_topic, self.image_callback,
+                qos_profile=qos_profile_sensor_data)
 
-        self.diag_pub = self.create_publisher(DiagnosticArray, '/diagnostics', 1)
-        self.diag_timer = self.create_timer(1/DIAG_PUB_RATE, self.do_diagnostics)
+        self.diag_pub = self.create_publisher(
+            DiagnosticArray, '/diagnostics', 1)
+        self.diag_timer = self.create_timer(
+            1/DIAG_PUB_RATE, self.do_diagnostics)
 
         self.get_logger().info(
             f'Waiting for images to be published on {self.image_sub.topic_name} .')
@@ -795,7 +912,8 @@ class NodeFaceDetect(Node):
         now = self.get_clock().now()
         for id in self.knownFaces.keys():
             del self.knownFaces[id]
-        self.faces_pub.publish(IdsList(header=Header(stamp=now.to_msg()), ids=[]))
+        self.faces_pub.publish(
+            IdsList(header=Header(stamp=now.to_msg()), ids=[]))
         self.faces_pub.wait_for_all_acked(Duration(seconds=1))
 
     def destroy_ros_interfaces(self):
@@ -816,7 +934,8 @@ class NodeFaceDetect(Node):
         msg = DiagnosticStatus(
             name='/social_perception/faces/hri_face_detect', hardware_id='none')
 
-        current_proc_duration = (now - self.detection_start_proc_time).nanoseconds / 1e9
+        current_proc_duration = (
+            now - self.detection_start_proc_time).nanoseconds / 1e9
         if ((current_proc_duration > FACE_DETECTION_PROC_TIME_ERROR) and self.image_lock.locked()):
             msg.level = DiagnosticStatus.ERROR
             msg.message = 'Face detection process not responding'
@@ -828,7 +947,8 @@ class NodeFaceDetect(Node):
 
         msg.values = [
             KeyValue(key='Module name', value='hri_face_detect'),
-            KeyValue(key='Currently detected faces', value=str(len(self.knownFaces))),
+            KeyValue(key='Currently detected faces',
+                     value=str(len(self.knownFaces))),
             KeyValue(key='Last detected face ID', value=str(self.last_id)),
             KeyValue(
                 key='Detection processing time', value=f'{self.detection_proc_duration_ms:.2f}ms')]
@@ -836,13 +956,80 @@ class NodeFaceDetect(Node):
         arr.status = [msg]
         self.diag_pub.publish(arr)
 
-    def info_callback(self, msg: CameraInfo):
-        if not hasattr(self, 'msg'):
-            self.msg = msg
+    def info_callback(self, rgb_info: CameraInfo):
+        if not hasattr(self, 'k'):
+            self.get_logger().info("Received rgb camera info.")
             self.k = np.zeros((3, 3), np.float32)
-            self.k[0][0:3] = self.msg.k[0:3]
-            self.k[1][0:3] = self.msg.k[3:6]
-            self.k[2][0:3] = self.msg.k[6:9]
+            self.k[0][0:3] = rgb_info.k[0:3]
+            self.k[1][0:3] = rgb_info.k[3:6]
+            self.k[2][0:3] = rgb_info.k[6:9]
+
+    def depth_info_callback(self, depth_info: CameraInfo):
+        """Store depth camera info."""
+        if not hasattr(self, 'depth_k'):
+            self.get_logger().info("Received depth camera info.")
+            self.depth_k = np.zeros((3, 3), np.float32)
+            self.depth_k[0][0:3] = depth_info.k[0:3]
+            self.depth_k[1][0:3] = depth_info.k[3:6]
+            self.depth_k[2][0:3] = depth_info.k[6:9]
+
+    def image_w_depth_callback(self,
+                               image_msg: Image | CompressedImage,
+                               depth_msg: Image | CompressedImage):
+        """Synchronize RGB and depth images."""
+        with self.image_lock:
+            if self.image_compressed:
+                self.image = CvBridge().compressed_imgmsg_to_cv2(image_msg)
+            else:
+                self.image = CvBridge().imgmsg_to_cv2(image_msg, desired_encoding='bgr8')
+            if self.depth_compressed:
+                # below, a workaround to the fact the cv_bridge does not
+                # support decompression of compressedDepth images.
+                # The code below is inspired by this vision_opencv PR 311 (still open)
+                if len(depth_msg.data) > 12:
+                    depth_format = depth_msg.format.rsplit(";")[0]
+                    cmp_image_data = np.array(depth_msg.data[12:])
+                    try:
+                        self.depth_image = cv2.imdecode(
+                            cmp_image_data, cv2.IMREAD_UNCHANGED)
+                        if depth_format.startswith("32"):
+                            rows = self.depth_image.shape[0]
+                            cols = self.depth_image.shape[1]
+                            if rows > 0 and cols > 0:
+                                [_, depth_quant_a, depth_quant_b] = struct.unpack(
+                                    'iff', depth_msg.data[:12])
+                                self.depth_image = depth_quant_a / \
+                                    (self.depth_image.astype(
+                                        np.float32) - depth_quant_b)
+                                self.depth_image[self.depth_image == 0] = np.nan
+                                self.depth_scale_factor = 1.0
+                            else:
+                                self.depth_image = None
+                    except Exception as e:
+                        self.depth_image = None
+                        self.get_logger().error(
+                            f'Failed depth image decompression: {e}')
+            else:
+                encoding = '16UC1'
+                if depth_msg.encoding == '32FC1':
+                    self.depth_scale_factor = 1.0
+                    encoding = '32FC1'
+                self.depth_image = CvBridge().imgmsg_to_cv2(depth_msg, desired_encoding=encoding)
+            self.image_msg_header = image_msg.header
+            self.depth_image_msg_header = depth_msg.header
+
+            if self.new_image:
+                self.skipped_images += 1
+                if self.skipped_images > 100:
+                    now = self.get_clock().now()
+                    skip_time = (
+                        now - self.start_skipping_ts).nanoseconds / 1e9
+                    self.get_logger().warn(
+                        "Face_detect's processing too slow. "
+                        f'Skipped 100 new incoming image over the last {skip_time:.1f}sec')
+                    self.start_skipping_ts = now
+                    self.skipped_images = 0
+            self.new_image = True
 
     def image_callback(self, msg: Image | CompressedImage):
         with self.image_lock:
@@ -856,7 +1043,8 @@ class NodeFaceDetect(Node):
                 self.skipped_images += 1
                 if self.skipped_images > 100:
                     now = self.get_clock().now()
-                    skip_time = (now - self.start_skipping_ts).nanoseconds / 1e9
+                    skip_time = (
+                        now - self.start_skipping_ts).nanoseconds / 1e9
                     self.get_logger().warn(
                         "Face_detect's processing too slow. "
                         f'Skipped 100 new incoming image over the last {skip_time:.1f}sec')
@@ -911,7 +1099,8 @@ class NodeFaceDetect(Node):
 
             # have we seen this face before? -> check whether or not bounding boxes overlap
             face = next(
-                (face for face in self.knownFaces.values() if bbs_match(face.bb, detection.bb)),
+                (face for face in self.knownFaces.values()
+                 if bbs_match(face.bb, detection.bb)),
                 None)
 
             if not face:
@@ -950,7 +1139,21 @@ class NodeFaceDetect(Node):
             if face.ready and face.do_publish:
                 face.publish(image, image_msg_header)
                 if hasattr(self, 'k'):
-                    face.compute_6d_pose(self.k, image_msg_header.frame_id, image_msg_header.stamp)
+                    if self.use_depth \
+                       and hasattr(self, 'depth_image') \
+                       and hasattr(self, 'depth_k'):
+                        face.compute_6d_pose(
+                            self.k,
+                            image_msg_header.frame_id,
+                            image_msg_header.stamp,
+                            self.depth_image,
+                            self.depth_k,
+                            self.depth_scale_factor)
+                    else:
+                        face.compute_6d_pose(
+                            self.k,
+                            image_msg_header.frame_id,
+                            image_msg_header.stamp)
                     self.tf_broadcaster.sendTransform(face.head_transform)
                     self.tf_broadcaster.sendTransform(face.gaze_transform)
 
@@ -978,7 +1181,8 @@ class NodeFaceDetect(Node):
                     image, f'{face.id}, {face.score}', (face.bb.xmin, face.bb.ymin),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0))
                 for landmark in face.landmarks.values():
-                    cv2.circle(image, (landmark.x, landmark.y), 2, (0, 255, 255), cv2.FILLED)
+                    cv2.circle(image, (landmark.x, landmark.y),
+                               2, (0, 255, 255), cv2.FILLED)
 
             cv2.imshow('Face Detection', image)
             cv2.waitKey(5)

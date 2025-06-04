@@ -60,6 +60,13 @@ All parameters are loaded in the lifecycle `configuration` transition.
   If true opens a windows showing the input image with face detections
   overlayed.
 
+- `use_depth` (bool, default: false):
+  If true the depth image is used to estimate the face pose.
+
+- `compressed_depth` (bool, default: false):
+  If `use_depth` is true, this parameter selects the compressed depth image
+  transport.
+
 ### Topics
 
 This package follows the ROS4HRI conventions ([REP-155](https://www.ros.org/reps/rep-0155.html)).
@@ -74,6 +81,15 @@ If the topic message type is not indicated, the ROS4HRI convention is implied.
   note that the suffix `/compressed` is added *after* the remapping is resolved,
   so you should remap only `image` regardless of the `image_compressed` value.
 - `camera_info` ([sensor_msgs/msg/CameraInfo](https://github.com/ros2/common_interfaces/blob/humble/sensor_msgs/msg/CameraInfo.msg))
+- `depth_image/compressedDepth`
+  ([sensor_msgs/CompressedImage](https://docs.ros2.org/latest/api/sensor_msgs/msg/CompressedImage.html)):
+  only if `depth_compressed` is true;
+  depth image used to estimate the 3D body position with respect to the camera;
+  note that the suffix `/compressed` is added *after* the remapping is resolved,
+  so you should remap only `depth_image` regardless of the `depth_compressed` value.
+- `depth_info`
+  ([sensor_msgs/CameraInfo](https://docs.ros2.org/latest/api/sensor_msgs/msg/CameraInfo.html)):
+  depth camera meta information
 
 #### Published
 
