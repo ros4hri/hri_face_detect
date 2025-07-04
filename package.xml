@@ -16,7 +16,9 @@
   <build_depend condition="$PAL_DISTRO != ''">pal_module_cmake</build_depend>
   <build_depend>pybind11_vendor</build_depend>
 
+  <exec_depend>ament_index_python</exec_depend>
   <exec_depend>builtin_interfaces</exec_depend>
+  <exec_depend>diagnostic_aggregator</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>hri_msgs</exec_depend>
   <exec_depend>launch</exec_depend>
