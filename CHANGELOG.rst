@@ -2,8 +2,8 @@
 Changelog for package hri_face_detect
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+2.2.2 (2025-07-09)
+------------------
 * Add diagnostic analyzers
 * Contributors: Noel Jimenez
 
