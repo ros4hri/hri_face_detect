@@ -39,7 +39,7 @@ from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
 from scipy.optimize import linear_sum_assignment
 from sensor_msgs.msg import CompressedImage, Image, CameraInfo
-from std_msgs.msg import Header
+from std_msgs.msg import Header, String
 from tf_transformations import quaternion_from_euler
 from tf2_geometry_msgs.tf2_geometry_msgs import Point, PointStamped
 from tf2_ros import Buffer, TransformBroadcaster, TransformListener
@@ -259,8 +259,8 @@ class Face:
     last_id = 0
 
     def __init__(
-            self, node: Node, tf_buffer: Buffer, filtering_frame: str,
-            deterministic_id: bool = False):
+            self, node: Node, data_source: str, tf_buffer: Buffer,
+            filtering_frame: str, deterministic_id: bool = False):
 
         # generate unique ID
         if deterministic_id:
@@ -279,6 +279,7 @@ class Face:
         self.landmarks: Dict[FacialLandmarks, ImagePoint] = dict()
 
         self.node = node
+        self.data_source = data_source
         self.tf_buffer = tf_buffer
         self.filtering_frame = filtering_frame
         self.head_transform: TransformStamped = None
@@ -303,10 +304,16 @@ class Face:
             return
 
         ns = f'/humans/faces/{self.id}'
-        self.roi_pub = self.node.create_publisher(NormalizedRegionOfInterest2D, ns + '/roi', 1)
-        self.cropped_pub = self.node.create_publisher(Image, ns + '/cropped', 1)
-        self.aligned_pub = self.node.create_publisher(Image, ns + '/aligned', 1)
-        self.landmarks_pub = self.node.create_publisher(FacialLandmarks, ns + '/landmarks', 1)
+        self.data_source_pub = self.node.create_publisher(
+            String, ns + '/data_source', 1)
+        self.roi_pub = self.node.create_publisher(
+            NormalizedRegionOfInterest2D, ns + '/roi', 1)
+        self.cropped_pub = self.node.create_publisher(
+            Image, ns + '/cropped', 1)
+        self.aligned_pub = self.node.create_publisher(
+            Image, ns + '/aligned', 1)
+        self.landmarks_pub = self.node.create_publisher(
+            FacialLandmarks, ns + '/landmarks', 1)
 
         self.node.get_logger().info(f'New face: {self}')
         self.ready = True
@@ -317,6 +324,7 @@ class Face:
                 'Trying to publish face information but publishers have not been created yet!')
             return
 
+        self.data_source_pub.publish(String(data=self.data_source))
         self.publish_normalized_roi(src_image, image_msg_header)
         self.publish_facial_landmarks(src_image, image_msg_header)
         self.publish_cropped_face(src_image, image_msg_header)
@@ -574,6 +582,7 @@ class Face:
         self.node.get_logger().info(
             f'Face [{self}] lost. It remained visible for {detect_time:.2f}sec')
 
+        self.node.destroy_publisher(self.data_source_pub)
         self.node.destroy_publisher(self.roi_pub)
         self.node.destroy_publisher(self.cropped_pub)
         self.node.destroy_publisher(self.aligned_pub)
@@ -705,6 +714,7 @@ class NodeFaceDetect(Node):
             'debug', False, ParameterDescriptor(
                 description='Enable debugging output image window'))
 
+        self.image_topic = ''
         self.get_logger().info('State: Unconfigured.')
 
     def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
@@ -755,14 +765,14 @@ class NodeFaceDetect(Node):
         self.proc_timer = self.create_timer(
             1/self.get_parameter('processing_rate').value, self.process_image)
 
-        image_topic = self.resolve_topic_name('image')
+        self.image_topic = self.resolve_topic_name('image')
         if self.image_compressed:
             self.image_sub = self.create_subscription(
-                CompressedImage, f'{image_topic}/compressed', self.image_callback,
+                CompressedImage, f'{self.image_topic}/compressed', self.image_callback,
                 qos_profile=qos_profile_sensor_data)
         else:
             self.image_sub = self.create_subscription(
-                Image, image_topic, self.image_callback, qos_profile=qos_profile_sensor_data)
+                Image, self.image_topic, self.image_callback, qos_profile=qos_profile_sensor_data)
 
         self.diag_pub = self.create_publisher(DiagnosticArray, '/diagnostics', 1)
         self.diag_timer = self.create_timer(1/DIAG_PUB_RATE, self.do_diagnostics)
@@ -905,7 +915,8 @@ class NodeFaceDetect(Node):
                 None)
 
             if not face:
-                face = Face(self, self.tf_buffer, self.filtering_frame, self.deterministic_ids)
+                face = Face(self, self.image_topic, self.tf_buffer,
+                            self.filtering_frame, self.deterministic_ids)
                 face.initial_detection_time = Time().from_msg(image_msg_header.stamp)
                 self.knownFaces[face.id] = face
                 self.last_id = face.id
